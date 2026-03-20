@@ -166,6 +166,45 @@ def _bypass_gatewayread_validation(monkeypatch):
     monkeypatch.setattr(GatewayRead, "model_validate", staticmethod(lambda x: _PassthroughMasked(x)))
 
 
+class _MockInspectionAttr:
+    """Mock SQLAlchemy inspection attribute with loaded_value property."""
+
+    def __init__(self, value):
+        self.loaded_value = value
+
+
+class _MockInstanceState:
+    """Mock SQLAlchemy InstanceState for inspection API."""
+
+    def __init__(self, obj):
+        self.attrs = {
+            "tools": _MockInspectionAttr(getattr(obj, "tools", [])),
+            "resources": _MockInspectionAttr(getattr(obj, "resources", [])),
+            "prompts": _MockInspectionAttr(getattr(obj, "prompts", [])),
+        }
+
+
+@pytest.fixture(autouse=True)
+def _mock_sa_inspect(monkeypatch):
+    """
+    Mock sa_inspect to handle MagicMock and SimpleNamespace gateway objects.
+    
+    The real GatewayService uses sa_inspect(gateway).attrs["tools"].loaded_value
+    to check if relationships are loaded. This fails with mock objects, so we
+    provide a mock inspector that returns the actual relationship data.
+    """
+    from sqlalchemy import inspect as real_sa_inspect
+
+    def patched_inspect(obj):
+        # Handle mock objects (MagicMock, Mock, SimpleNamespace)
+        if isinstance(obj, (MagicMock, Mock, SimpleNamespace)):
+            return _MockInstanceState(obj)
+        # Fall through to real SQLAlchemy inspect for actual models
+        return real_sa_inspect(obj)
+
+    monkeypatch.setattr("mcpgateway.services.gateway_service.sa_inspect", patched_inspect)
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
