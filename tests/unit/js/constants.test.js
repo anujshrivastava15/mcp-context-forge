@@ -71,8 +71,8 @@ describe("constants", () => {
     expect(catalog.partialPath).toBe("servers/partial");
     expect(catalog.targetSelector).toBe("#servers-table");
     expect(catalog.indicatorSelector).toBe("#servers-loading");
-    expect(catalog.searchInputId).toBe("catalog-search-input");
-    expect(catalog.tagInputId).toBe("catalog-tag-filter");
+    expect(catalog.searchInputId).toBe("servers-search-input");
+    expect(catalog.tagInputId).toBe("servers-tag-filter");
     expect(catalog.inactiveCheckboxId).toBe("show-inactive-servers");
     expect(catalog.defaultPerPage).toBe(50);
   });

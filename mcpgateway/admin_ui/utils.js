@@ -744,3 +744,42 @@ export const makeCopyIdButton = function (id) {
   });
   return btn;
 };
+
+export const isUiResourceUri = function (uri) {
+  return (
+    typeof uri === "string" && uri.trim().toLowerCase().startsWith("ui://")
+  );
+};
+
+export const bindMcpAppMimeHelper = function (
+  uriInputId,
+  mimeInputId,
+  helperId
+) {
+  const uriField = safeGetElement(uriInputId, true);
+  const mimeField = safeGetElement(mimeInputId, true);
+  const helperText = safeGetElement(helperId, true);
+
+  if (!uriField || !mimeField || !helperText) {
+    return;
+  }
+
+  if (mimeField.dataset.mcpAppMimeHelperBound === "true") {
+    return;
+  }
+  mimeField.dataset.mcpAppMimeHelperBound = "true";
+
+  const updateHelperVisibility = () => {
+    const shouldShow =
+      document.activeElement === mimeField && isUiResourceUri(uriField.value);
+    helperText.classList.toggle("hidden", !shouldShow);
+  };
+
+  uriField.addEventListener("input", updateHelperVisibility);
+  mimeField.addEventListener("focus", updateHelperVisibility);
+  mimeField.addEventListener("blur", () => {
+    helperText.classList.add("hidden");
+  });
+
+  updateHelperVisibility();
+};

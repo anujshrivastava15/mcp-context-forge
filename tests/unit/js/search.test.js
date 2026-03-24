@@ -25,6 +25,14 @@ import {
   closeGlobalSearchModal,
   navigateToGlobalSearchResult,
   ensureNoResultsElement,
+  captureNonMemberSelections,
+  restoreNonMemberSelections,
+  captureMemberOverrides,
+  restoreMemberOverrides,
+  debouncedMemberSearch,
+  debouncedNonMemberSearch,
+  serverSideMemberSearch,
+  serverSideNonMemberSearch,
 } from "../../../mcpgateway/admin_ui/search.js";
 
 // Mock dependencies
@@ -37,7 +45,7 @@ vi.mock("../../../mcpgateway/admin_ui/utils.js", () => ({
 }));
 
 vi.mock("../../../mcpgateway/admin_ui/tokens.js", () => ({
-  fetchWithAuth: vi.fn(),
+  fetchWithAuth: vi.fn(() => Promise.resolve({ ok: false })),
   performTokenSearch: vi.fn(),
 }));
 
@@ -87,10 +95,21 @@ vi.mock("../../../mcpgateway/admin_ui/resources.js", () => ({
   initResourceSelect: vi.fn(),
 }));
 
-beforeEach(() => {
+vi.mock("../../../mcpgateway/admin_ui/appState.js", () => {
+  const state = {
+    nonMemberSelectionsCache: {},
+    memberOverridesCache: {},
+    memberSearchTimers: {},
+    nonMemberSearchTimers: {},
+  };
+  return { AppState: state };
+});
+
+beforeEach(async () => {
   window.ROOT_PATH = "";
   window.htmx = {
     ajax: vi.fn(),
+    process: vi.fn(),
   };
   window.Admin = {
     toolMapping: {},
@@ -98,6 +117,18 @@ beforeEach(() => {
     resourceMapping: {},
   };
   vi.clearAllMocks();
+
+  // Reset AppState caches between tests
+  const { AppState } = await import("../../../mcpgateway/admin_ui/appState.js");
+  AppState.nonMemberSelectionsCache = {};
+  AppState.memberOverridesCache = {};
+  AppState.memberSearchTimers = {};
+  AppState.nonMemberSearchTimers = {};
+
+  // Reset fetchWithAuth mock to default success
+  const { fetchWithAuth } = await import("../../../mcpgateway/admin_ui/tokens.js");
+  fetchWithAuth.mockReset();
+  fetchWithAuth.mockResolvedValue({ ok: false });
 });
 
 afterEach(() => {
@@ -112,7 +143,9 @@ function buildSearchableTable(entityType, tbodyId, rows) {
   panel.id = `${entityType}-panel`;
 
   const input = document.createElement("input");
-  input.id = `${entityType}-search-input`;
+  // Use correct ID mapping: catalog uses servers-search-input
+  const inputId = entityType === "catalog" ? "servers-search-input" : `${entityType}-search-input`;
+  input.id = inputId;
   input.value = "previous search";
   panel.appendChild(input);
 
@@ -378,18 +411,18 @@ describe("loadSearchablePanel", () => {
 
   test("loads panel with search params", () => {
     const searchInput = document.createElement("input");
-    searchInput.id = "catalog-search-input";
+    searchInput.id = "servers-search-input";
     searchInput.value = "test";
     document.body.appendChild(searchInput);
 
     const tagInput = document.createElement("input");
-    tagInput.id = "catalog-tag-input";
+    tagInput.id = "servers-tag-filter";
     tagInput.value = "tag1";
     document.body.appendChild(tagInput);
 
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
-    checkbox.id = "catalog-include-inactive";
+    checkbox.id = "show-inactive-servers";
     checkbox.checked = true;
     document.body.appendChild(checkbox);
 
@@ -407,7 +440,7 @@ describe("loadSearchablePanel", () => {
     getCurrentTeamId.mockReturnValue("team-123");
 
     const searchInput = document.createElement("input");
-    searchInput.id = "catalog-search-input";
+    searchInput.id = "servers-search-input";
     document.body.appendChild(searchInput);
 
     loadSearchablePanel("catalog");
@@ -827,5 +860,600 @@ describe("serverSideEditResourcesSearch", () => {
       expect.stringContaining("not found")
     );
     consoleSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Helper: build a team members container with user-item rows
+// ---------------------------------------------------------------------------
+function buildTeamMembersContainer(teamId, members = []) {
+  const container = document.createElement("div");
+  container.id = `team-members-container-${teamId}`;
+  container.setAttribute("data-per-page", "50");
+  members.forEach(({ email, role, autoCheck = false }) => {
+    const item = document.createElement("div");
+    item.className = "user-item";
+    item.setAttribute("data-user-email", email);
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.name = "associatedUsers";
+    cb.value = email;
+    if (autoCheck) cb.setAttribute("data-auto-check", "true");
+
+    const roleSelect = document.createElement("select");
+    roleSelect.className = "role-select";
+    // Add all possible role options
+    ["member", "admin", "viewer"].forEach(r => {
+      const opt = document.createElement("option");
+      opt.value = r;
+      opt.textContent = r;
+      roleSelect.appendChild(opt);
+    });
+    roleSelect.value = role;
+
+    item.appendChild(cb);
+    item.appendChild(roleSelect);
+    container.appendChild(item);
+  });
+  document.body.appendChild(container);
+  return container;
+}
+
+function buildNonMembersContainer(teamId, members = []) {
+  const container = document.createElement("div");
+  container.id = `team-non-members-container-${teamId}`;
+  members.forEach(({ email, role, checked = false }) => {
+    const item = document.createElement("div");
+    item.className = "user-item";
+    item.setAttribute("data-user-email", email);
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.name = "associatedUsers";
+    cb.value = email;
+    cb.checked = checked;
+
+    const roleSelect = document.createElement("select");
+    roleSelect.className = "role-select";
+    // Add all possible role options
+    ["member", "admin", "viewer"].forEach(r => {
+      const opt = document.createElement("option");
+      opt.value = r;
+      opt.textContent = r;
+      roleSelect.appendChild(opt);
+    });
+    roleSelect.value = role;
+
+    item.appendChild(cb);
+    item.appendChild(roleSelect);
+    container.appendChild(item);
+  });
+  document.body.appendChild(container);
+  return container;
+}
+
+// ---------------------------------------------------------------------------
+// captureNonMemberSelections
+// ---------------------------------------------------------------------------
+describe("captureNonMemberSelections", () => {
+  test("does nothing when container is missing", async () => {
+    const { AppState } = await import("../../../mcpgateway/admin_ui/appState.js");
+    captureNonMemberSelections("team-99");
+    expect(AppState.nonMemberSelectionsCache["team-99"]).toBeUndefined();
+  });
+
+  test("captures checked non-members into cache", async () => {
+    const { AppState } = await import("../../../mcpgateway/admin_ui/appState.js");
+    buildNonMembersContainer("team-1", [
+      { email: "alice@example.com", role: "member", checked: true },
+      { email: "bob@example.com", role: "admin", checked: false },
+    ]);
+
+    captureNonMemberSelections("team-1");
+
+    expect(AppState.nonMemberSelectionsCache["team-1"]["alice@example.com"]).toBe("member");
+    expect(AppState.nonMemberSelectionsCache["team-1"]["bob@example.com"]).toBeUndefined();
+  });
+
+  test("removes unchecked entries from existing cache", async () => {
+    const { AppState } = await import("../../../mcpgateway/admin_ui/appState.js");
+    AppState.nonMemberSelectionsCache["team-2"] = { "alice@example.com": "member" };
+    buildNonMembersContainer("team-2", [
+      { email: "alice@example.com", role: "member", checked: false },
+    ]);
+
+    captureNonMemberSelections("team-2");
+
+    expect(AppState.nonMemberSelectionsCache["team-2"]["alice@example.com"]).toBeUndefined();
+  });
+
+  test("skips items without email attribute", async () => {
+    const { AppState } = await import("../../../mcpgateway/admin_ui/appState.js");
+    const container = document.createElement("div");
+    container.id = "team-non-members-container-team-3";
+    const item = document.createElement("div");
+    item.className = "user-item";
+    // No data-user-email attribute
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.name = "associatedUsers";
+    cb.checked = true;
+    item.appendChild(cb);
+    container.appendChild(item);
+    document.body.appendChild(container);
+
+    captureNonMemberSelections("team-3");
+
+    expect(AppState.nonMemberSelectionsCache["team-3"]).toEqual({});
+  });
+
+  test("does not capture auto-checked items", async () => {
+    const { AppState } = await import("../../../mcpgateway/admin_ui/appState.js");
+    const container = document.createElement("div");
+    container.id = "team-non-members-container-team-4";
+    const item = document.createElement("div");
+    item.className = "user-item";
+    item.setAttribute("data-user-email", "carol@example.com");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.name = "associatedUsers";
+    cb.checked = true;
+    cb.setAttribute("data-auto-check", "true");
+    item.appendChild(cb);
+    container.appendChild(item);
+    document.body.appendChild(container);
+
+    captureNonMemberSelections("team-4");
+
+    expect(AppState.nonMemberSelectionsCache["team-4"]["carol@example.com"]).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// restoreNonMemberSelections
+// ---------------------------------------------------------------------------
+describe("restoreNonMemberSelections", () => {
+  test("does nothing when container is missing", async () => {
+    const { AppState } = await import("../../../mcpgateway/admin_ui/appState.js");
+    AppState.nonMemberSelectionsCache["team-10"] = { "alice@example.com": "member" };
+    // No container in DOM — should not throw
+    expect(() => restoreNonMemberSelections("team-10")).not.toThrow();
+  });
+
+  test("does nothing when cache is missing for team", async () => {
+    buildNonMembersContainer("team-11", [
+      { email: "alice@example.com", role: "member", checked: false },
+    ]);
+    expect(() => restoreNonMemberSelections("team-11")).not.toThrow();
+  });
+
+  test("restores checked state for cached user visible in DOM", async () => {
+    const { AppState } = await import("../../../mcpgateway/admin_ui/appState.js");
+    AppState.nonMemberSelectionsCache["team-12"] = { "alice@example.com": "admin" };
+    buildNonMembersContainer("team-12", [
+      { email: "alice@example.com", role: "member", checked: false },
+    ]);
+
+    restoreNonMemberSelections("team-12");
+
+    const container = document.getElementById("team-non-members-container-team-12");
+    const cb = container.querySelector('input[name="associatedUsers"]');
+    const roleSelect = container.querySelector(".role-select");
+    expect(cb.checked).toBe(true);
+    expect(roleSelect.value).toBe("admin");
+  });
+
+  test("injects hidden cached-selection element for off-screen cached user", async () => {
+    const { AppState } = await import("../../../mcpgateway/admin_ui/appState.js");
+    AppState.nonMemberSelectionsCache["team-13"] = { "ghost@example.com": "viewer" };
+    buildNonMembersContainer("team-13", []);
+
+    restoreNonMemberSelections("team-13");
+
+    const container = document.getElementById("team-non-members-container-team-13");
+    const hiddenDiv = container.querySelector(".cached-selection");
+    expect(hiddenDiv).toBeTruthy();
+    const hiddenCb = hiddenDiv.querySelector('input[name="associatedUsers"]');
+    expect(hiddenCb.value).toBe("ghost@example.com");
+    expect(hiddenCb.checked).toBe(true);
+  });
+
+  test("removes stale cached-selection elements before re-injecting", async () => {
+    const { AppState } = await import("../../../mcpgateway/admin_ui/appState.js");
+    AppState.nonMemberSelectionsCache["team-14"] = { "ghost@example.com": "member" };
+    const container = buildNonMembersContainer("team-14", []);
+    // Pre-populate a stale cached-selection
+    const stale = document.createElement("div");
+    stale.className = "cached-selection hidden";
+    container.appendChild(stale);
+
+    restoreNonMemberSelections("team-14");
+
+    const allCached = container.querySelectorAll(".cached-selection");
+    expect(allCached.length).toBe(1); // Only the freshly created one
+  });
+});
+
+// ---------------------------------------------------------------------------
+// captureMemberOverrides
+// ---------------------------------------------------------------------------
+describe("captureMemberOverrides", () => {
+  test("does nothing when container is missing", async () => {
+    const { AppState } = await import("../../../mcpgateway/admin_ui/appState.js");
+    captureMemberOverrides("team-20");
+    expect(AppState.memberOverridesCache["team-20"]).toBeUndefined();
+  });
+
+  test("captures override when auto-check member is unchecked", async () => {
+    const { AppState } = await import("../../../mcpgateway/admin_ui/appState.js");
+    const container = buildTeamMembersContainer("team-21", [
+      { email: "alice@example.com", role: "member", autoCheck: true },
+    ]);
+    // Uncheck the auto-checked member
+    const cb = container.querySelector('input[name="associatedUsers"]');
+    cb.checked = false;
+
+    captureMemberOverrides("team-21");
+
+    expect(AppState.memberOverridesCache["team-21"]["alice@example.com"]).toEqual({
+      checked: false,
+      role: "member",
+    });
+  });
+
+  test("does not capture non-auto-check members", async () => {
+    const { AppState } = await import("../../../mcpgateway/admin_ui/appState.js");
+    buildTeamMembersContainer("team-22", [
+      { email: "bob@example.com", role: "admin", autoCheck: false },
+    ]);
+    const container = document.getElementById("team-members-container-team-22");
+    const cb = container.querySelector('input[name="associatedUsers"]');
+    cb.checked = false;
+
+    captureMemberOverrides("team-22");
+
+    expect(AppState.memberOverridesCache["team-22"] ?? {}).toEqual({});
+  });
+
+  test("skips items without email attribute", async () => {
+    const { AppState } = await import("../../../mcpgateway/admin_ui/appState.js");
+    const container = document.createElement("div");
+    container.id = "team-members-container-team-23";
+    const item = document.createElement("div");
+    item.className = "user-item";
+    // No data-user-email
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.name = "associatedUsers";
+    cb.checked = false;
+    cb.setAttribute("data-auto-check", "true");
+    item.appendChild(cb);
+    container.appendChild(item);
+    document.body.appendChild(container);
+
+    captureMemberOverrides("team-23");
+
+    expect(AppState.memberOverridesCache["team-23"]).toEqual({});
+  });
+});
+
+// ---------------------------------------------------------------------------
+// restoreMemberOverrides
+// ---------------------------------------------------------------------------
+describe("restoreMemberOverrides", () => {
+  test("does nothing when container is missing", async () => {
+    const { AppState } = await import("../../../mcpgateway/admin_ui/appState.js");
+    AppState.memberOverridesCache["team-30"] = { "alice@example.com": { checked: false, role: "admin" } };
+    expect(() => restoreMemberOverrides("team-30")).not.toThrow();
+  });
+
+  test("does nothing when cache is missing for team", () => {
+    buildTeamMembersContainer("team-31", [
+      { email: "alice@example.com", role: "member" },
+    ]);
+    expect(() => restoreMemberOverrides("team-31")).not.toThrow();
+  });
+
+  test("restores checked and role from cache", async () => {
+    const { AppState } = await import("../../../mcpgateway/admin_ui/appState.js");
+    AppState.memberOverridesCache["team-32"] = {
+      "alice@example.com": { checked: false, role: "viewer" },
+    };
+    buildTeamMembersContainer("team-32", [
+      { email: "alice@example.com", role: "member" },
+    ]);
+    const container = document.getElementById("team-members-container-team-32");
+    const cb = container.querySelector('input[name="associatedUsers"]');
+    cb.checked = true; // start checked, cache says false
+
+    restoreMemberOverrides("team-32");
+
+    expect(cb.checked).toBe(false);
+    const roleSelect = container.querySelector(".role-select");
+    expect(roleSelect.value).toBe("viewer");
+  });
+
+  test("skips members not present in cache", async () => {
+    const { AppState } = await import("../../../mcpgateway/admin_ui/appState.js");
+    AppState.memberOverridesCache["team-33"] = {};
+    buildTeamMembersContainer("team-33", [
+      { email: "bob@example.com", role: "member" },
+    ]);
+    const container = document.getElementById("team-members-container-team-33");
+    const cb = container.querySelector('input[name="associatedUsers"]');
+    cb.checked = true;
+
+    restoreMemberOverrides("team-33");
+
+    // Should remain unchanged
+    expect(cb.checked).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// debouncedMemberSearch
+// ---------------------------------------------------------------------------
+describe("debouncedMemberSearch", () => {
+  test("calls serverSideMemberSearch after delay", async () => {
+    vi.useFakeTimers();
+    buildTeamMembersContainer("team-40", []);
+
+    const { fetchWithAuth } = await import("../../../mcpgateway/admin_ui/tokens.js");
+    fetchWithAuth.mockResolvedValue({
+      ok: true,
+      text: async () => "<div>members</div>",
+    });
+
+    debouncedMemberSearch("team-40", "alice", 200);
+    expect(fetchWithAuth).not.toHaveBeenCalled();
+
+    await vi.runAllTimersAsync();
+    expect(fetchWithAuth).toHaveBeenCalledWith(
+      expect.stringContaining("team-40/members/partial")
+    );
+
+    vi.useRealTimers();
+  });
+
+  test("debounces rapid calls — only fires once", async () => {
+    vi.useFakeTimers();
+    buildTeamMembersContainer("team-41", []);
+
+    const { fetchWithAuth } = await import("../../../mcpgateway/admin_ui/tokens.js");
+    fetchWithAuth.mockResolvedValue({
+      ok: true,
+      text: async () => "<div>members</div>",
+    });
+
+    debouncedMemberSearch("team-41", "a", 200);
+    debouncedMemberSearch("team-41", "al", 200);
+    debouncedMemberSearch("team-41", "ali", 200);
+
+    await vi.runAllTimersAsync();
+    expect(fetchWithAuth).toHaveBeenCalledTimes(1);
+    expect(fetchWithAuth).toHaveBeenCalledWith(
+      expect.stringContaining("search=ali")
+    );
+
+    vi.useRealTimers();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// debouncedNonMemberSearch
+// ---------------------------------------------------------------------------
+describe("debouncedNonMemberSearch", () => {
+  test("calls serverSideNonMemberSearch after delay", async () => {
+    vi.useFakeTimers();
+    buildNonMembersContainer("team-50", []);
+
+    const { fetchWithAuth } = await import("../../../mcpgateway/admin_ui/tokens.js");
+    fetchWithAuth.mockResolvedValue({
+      ok: true,
+      text: async () => "<div>users</div>",
+    });
+
+    debouncedNonMemberSearch("team-50", "alice", 200);
+    expect(fetchWithAuth).not.toHaveBeenCalled();
+
+    await vi.runAllTimersAsync();
+    expect(fetchWithAuth).toHaveBeenCalledWith(
+      expect.stringContaining("team-50/non-members/partial")
+    );
+
+    vi.useRealTimers();
+  });
+
+  test("debounces rapid calls — only fires once", async () => {
+    vi.useFakeTimers();
+    buildNonMembersContainer("team-51", []);
+
+    const { fetchWithAuth } = await import("../../../mcpgateway/admin_ui/tokens.js");
+    fetchWithAuth.mockResolvedValue({
+      ok: true,
+      text: async () => "<div>users</div>",
+    });
+
+    debouncedNonMemberSearch("team-51", "ali", 200);
+    debouncedNonMemberSearch("team-51", "alic", 200);
+    debouncedNonMemberSearch("team-51", "alice", 200);
+
+    await vi.runAllTimersAsync();
+    expect(fetchWithAuth).toHaveBeenCalledTimes(1);
+    expect(fetchWithAuth).toHaveBeenCalledWith(
+      expect.stringContaining("search=alice")
+    );
+
+    vi.useRealTimers();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// serverSideMemberSearch
+// ---------------------------------------------------------------------------
+describe("serverSideMemberSearch", () => {
+  test("does nothing when container is missing", async () => {
+    const { fetchWithAuth } = await import("../../../mcpgateway/admin_ui/tokens.js");
+    await serverSideMemberSearch("team-60", "alice");
+    expect(fetchWithAuth).not.toHaveBeenCalled();
+  });
+
+  test("fetches and renders member list", async () => {
+    const { fetchWithAuth } = await import("../../../mcpgateway/admin_ui/tokens.js");
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    
+    fetchWithAuth.mockReset();
+    fetchWithAuth.mockImplementation(() => Promise.resolve({
+      ok: true,
+      text: () => Promise.resolve("<div>member-html</div>"),
+    }));
+    buildTeamMembersContainer("team-61", []);
+
+    await serverSideMemberSearch("team-61", "alice");
+
+    const container = document.getElementById("team-members-container-team-61");
+    expect(container.innerHTML).toContain("member-html");
+    expect(fetchWithAuth).toHaveBeenCalledWith(
+      expect.stringContaining("team-61/members/partial")
+    );
+    
+    consoleSpy.mockRestore();
+  });
+
+  test("includes search param when searchTerm is non-empty", async () => {
+    const { fetchWithAuth } = await import("../../../mcpgateway/admin_ui/tokens.js");
+    fetchWithAuth.mockResolvedValue({
+      ok: true,
+      text: async () => "",
+    });
+    buildTeamMembersContainer("team-62", []);
+
+    await serverSideMemberSearch("team-62", "bob");
+
+    expect(fetchWithAuth).toHaveBeenCalledWith(
+      expect.stringContaining("search=bob")
+    );
+  });
+
+  test("omits search param when searchTerm is blank", async () => {
+    const { fetchWithAuth } = await import("../../../mcpgateway/admin_ui/tokens.js");
+    fetchWithAuth.mockResolvedValue({
+      ok: true,
+      text: async () => "",
+    });
+    buildTeamMembersContainer("team-63", []);
+
+    await serverSideMemberSearch("team-63", "");
+
+    expect(fetchWithAuth).toHaveBeenCalledWith(
+      expect.not.stringContaining("search=")
+    );
+  });
+
+  test("shows error message on fetch failure", async () => {
+    const { fetchWithAuth } = await import("../../../mcpgateway/admin_ui/tokens.js");
+    fetchWithAuth.mockRejectedValue(new Error("Network error"));
+    buildTeamMembersContainer("team-64", []);
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await serverSideMemberSearch("team-64", "alice");
+
+    const container = document.getElementById("team-members-container-team-64");
+    expect(container.innerHTML).toContain("Error searching members");
+    consoleSpy.mockRestore();
+  });
+
+  test("uses data-per-page attribute from container when available", async () => {
+    const { fetchWithAuth } = await import("../../../mcpgateway/admin_ui/tokens.js");
+    fetchWithAuth.mockResolvedValue({
+      ok: true,
+      text: async () => "",
+    });
+    const container = buildTeamMembersContainer("team-65", []);
+    container.setAttribute("data-per-page", "25");
+
+    await serverSideMemberSearch("team-65", "");
+
+    expect(fetchWithAuth).toHaveBeenCalledWith(
+      expect.stringContaining("per_page=25")
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// serverSideNonMemberSearch
+// ---------------------------------------------------------------------------
+describe("serverSideNonMemberSearch", () => {
+  test("does nothing when container is missing", async () => {
+    const { fetchWithAuth } = await import("../../../mcpgateway/admin_ui/tokens.js");
+    await serverSideNonMemberSearch("team-70", "alice");
+    expect(fetchWithAuth).not.toHaveBeenCalled();
+  });
+
+  test("shows minimum-chars message when searchTerm is too short", async () => {
+    const { fetchWithAuth } = await import("../../../mcpgateway/admin_ui/tokens.js");
+    buildNonMembersContainer("team-71", []);
+
+    await serverSideNonMemberSearch("team-71", "a");
+
+    const container = document.getElementById("team-non-members-container-team-71");
+    expect(container.innerHTML).toContain("2 characters");
+    expect(fetchWithAuth).not.toHaveBeenCalled();
+  });
+
+  test("shows minimum-chars message when searchTerm is empty", async () => {
+    const { fetchWithAuth } = await import("../../../mcpgateway/admin_ui/tokens.js");
+    buildNonMembersContainer("team-72", []);
+
+    await serverSideNonMemberSearch("team-72", "");
+
+    const container = document.getElementById("team-non-members-container-team-72");
+    expect(container.innerHTML).toContain("2 characters");
+    expect(fetchWithAuth).not.toHaveBeenCalled();
+  });
+
+  test("fetches and renders non-member list for valid search term", async () => {
+    const { fetchWithAuth } = await import("../../../mcpgateway/admin_ui/tokens.js");
+    fetchWithAuth.mockReset();
+    fetchWithAuth.mockImplementation(() => Promise.resolve({
+      ok: true,
+      text: () => Promise.resolve("<div>non-member-html</div>"),
+    }));
+    buildNonMembersContainer("team-73", []);
+
+    await serverSideNonMemberSearch("team-73", "alice");
+
+    const container = document.getElementById("team-non-members-container-team-73");
+    expect(container.innerHTML).toContain("non-member-html");
+    expect(fetchWithAuth).toHaveBeenCalledWith(
+      expect.stringContaining("team-73/non-members/partial")
+    );
+    expect(fetchWithAuth).toHaveBeenCalledWith(
+      expect.stringContaining("search=alice")
+    );
+  });
+
+  test("shows error message on fetch failure", async () => {
+    const { fetchWithAuth } = await import("../../../mcpgateway/admin_ui/tokens.js");
+    fetchWithAuth.mockRejectedValue(new Error("Network error"));
+    buildNonMembersContainer("team-74", []);
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await serverSideNonMemberSearch("team-74", "alice");
+
+    const container = document.getElementById("team-non-members-container-team-74");
+    expect(container.innerHTML).toContain("Error searching users");
+    consoleSpy.mockRestore();
+  });
+
+  test("trims searchTerm before minimum-length check", async () => {
+    const { fetchWithAuth } = await import("../../../mcpgateway/admin_ui/tokens.js");
+    buildNonMembersContainer("team-75", []);
+
+    // Single char with surrounding spaces trims to 1 char — below threshold
+    await serverSideNonMemberSearch("team-75", "  a  ");
+
+    expect(fetchWithAuth).not.toHaveBeenCalled();
   });
 });

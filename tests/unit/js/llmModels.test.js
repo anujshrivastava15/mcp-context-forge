@@ -6,8 +6,7 @@
  *        checkLLMProviderHealth, showAddModelModal, populateProviderDropdown,
  *        closeLLMModelModal, onModelProviderChange, fetchModelsForModelModal,
  *        editLLMModel, saveLLMModel, deleteLLMModel, toggleLLMModel,
- *        filterModelsByProvider, llmApiInfoApp, overviewDashboard,
- *        debouncedServerSideUserSearch, serverSideUserSearch
+ *        filterModelsByProvider, llmApiInfoApp, overviewDashboard
  */
 
 import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
@@ -36,12 +35,9 @@ import {
   filterModelsByProvider,
   llmApiInfoApp,
   overviewDashboard,
-  debouncedServerSideUserSearch,
-  serverSideUserSearch,
 } from "../../../mcpgateway/admin_ui/llmModels.js";
 
 import { showCopyableModal } from "../../../mcpgateway/admin_ui/modals.js";
-import { fetchWithAuth } from "../../../mcpgateway/admin_ui/tokens.js";
 import { showToast } from "../../../mcpgateway/admin_ui/utils.js";
 
 // Mock dependencies before imports
@@ -57,7 +53,6 @@ vi.mock("../../../mcpgateway/admin_ui/security.js", () => ({
 }));
 
 vi.mock("../../../mcpgateway/admin_ui/tokens.js", () => ({
-  fetchWithAuth: vi.fn(),
   getAuthToken: vi.fn(() => Promise.resolve("test-token")),
 }));
 
@@ -1159,9 +1154,9 @@ describe("onModelProviderChange", () => {
     modelInput.id = "llm-model-model-id";
     document.body.appendChild(modelInput);
 
-    const datalist = document.createElement("datalist");
-    datalist.id = "llm-model-suggestions";
-    document.body.appendChild(datalist);
+    const dropdown = document.createElement("ul");
+    dropdown.id = "llm-model-dropdown";
+    document.body.appendChild(dropdown);
 
     const statusEl = document.createElement("div");
     statusEl.id = "llm-model-fetch-status";
@@ -1171,7 +1166,7 @@ describe("onModelProviderChange", () => {
     await onModelProviderChange();
 
     expect(modelInput.placeholder).toBe("Type or select a model...");
-    expect(datalist.options.length).toBe(1);
+    expect(dropdown.children.length).toBe(1);
 
     fetchSpy.mockRestore();
     consoleSpy.mockRestore();
@@ -1205,9 +1200,9 @@ describe("fetchModelsForModelModal", () => {
     providerSelect.appendChild(option);
     document.body.appendChild(providerSelect);
 
-    const datalist = document.createElement("datalist");
-    datalist.id = "llm-model-suggestions";
-    document.body.appendChild(datalist);
+    const dropdown = document.createElement("ul");
+    dropdown.id = "llm-model-dropdown";
+    document.body.appendChild(dropdown);
 
     const statusEl = document.createElement("div");
     statusEl.id = "llm-model-fetch-status";
@@ -1218,7 +1213,7 @@ describe("fetchModelsForModelModal", () => {
 
     expect(statusEl.classList.contains("hidden")).toBe(false);
     expect(statusEl.textContent).toContain("Found 2 models");
-    expect(datalist.options.length).toBe(2);
+    expect(dropdown.children.length).toBe(2);
 
     fetchSpy.mockRestore();
     consoleSpy.mockRestore();
@@ -1817,123 +1812,5 @@ describe("overviewDashboard", () => {
   test("handles missing SVG element", () => {
     const dashboard = overviewDashboard();
     expect(() => dashboard.updateSvgColors()).not.toThrow();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// debouncedServerSideUserSearch / serverSideUserSearch
-// ---------------------------------------------------------------------------
-describe("debouncedServerSideUserSearch", () => {
-  test("debounces search calls", async () => {
-    vi.useFakeTimers();
-
-    const membersContainer = document.createElement("div");
-    membersContainer.id = "team-members-container-team1";
-    document.body.appendChild(membersContainer);
-
-    const nonMembersContainer = document.createElement("div");
-    nonMembersContainer.id = "team-non-members-container-team1";
-    document.body.appendChild(nonMembersContainer);
-
-    debouncedServerSideUserSearch("team1", "test", 300);
-    debouncedServerSideUserSearch("team1", "test2", 300);
-
-    // Only the last call should be executed after debounce
-    vi.advanceTimersByTime(300);
-
-    vi.useRealTimers();
-  });
-});
-
-describe("serverSideUserSearch", () => {
-  test("reloads both sections when search is empty", async () => {
-    fetchWithAuth.mockResolvedValueOnce({
-      ok: true,
-      text: () => Promise.resolve("<div>Members</div>"),
-    });
-    fetchWithAuth.mockResolvedValueOnce({
-      ok: true,
-      text: () => Promise.resolve("<div>Non-members</div>"),
-    });
-
-    const membersContainer = document.createElement("div");
-    membersContainer.id = "team-members-container-team1";
-    membersContainer.dataset.perPage = "20";
-    document.body.appendChild(membersContainer);
-
-    const nonMembersContainer = document.createElement("div");
-    nonMembersContainer.id = "team-non-members-container-team1";
-    nonMembersContainer.dataset.perPage = "20";
-    document.body.appendChild(nonMembersContainer);
-
-    await serverSideUserSearch("team1", "");
-
-    expect(fetchWithAuth).toHaveBeenCalledTimes(2);
-    expect(membersContainer.innerHTML).toContain("Members");
-    expect(nonMembersContainer.innerHTML).toContain("Non-members");
-  });
-
-  test("searches users and splits into members/non-members", async () => {
-    // Mock member data fetch
-    fetchWithAuth.mockResolvedValueOnce({
-      ok: true,
-      text: () =>
-        Promise.resolve(
-          '<div class="user-item" data-user-email="member@test.com"><select class="role-select"><option value="member" selected>Member</option></select></div>'
-        ),
-    });
-
-    // Mock user search
-    fetchWithAuth.mockResolvedValueOnce({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          users: [
-            { email: "member@test.com", full_name: "Member User" },
-            { email: "nonmember@test.com", full_name: "Non-Member User" },
-          ],
-        }),
-    });
-
-    const membersContainer = document.createElement("div");
-    membersContainer.id = "team-members-container-team1";
-    membersContainer.dataset.perPage = "20";
-    document.body.appendChild(membersContainer);
-
-    const nonMembersContainer = document.createElement("div");
-    nonMembersContainer.id = "team-non-members-container-team1";
-    nonMembersContainer.dataset.perPage = "20";
-    document.body.appendChild(nonMembersContainer);
-
-    await serverSideUserSearch("team1", "test");
-
-    expect(membersContainer.innerHTML).toContain("member@test.com");
-    expect(nonMembersContainer.innerHTML).toContain("nonmember@test.com");
-  });
-
-  test("handles search error", async () => {
-    fetchWithAuth.mockRejectedValue(new Error("Search failed"));
-
-    const membersContainer = document.createElement("div");
-    membersContainer.id = "team-members-container-team1";
-    document.body.appendChild(membersContainer);
-
-    const nonMembersContainer = document.createElement("div");
-    nonMembersContainer.id = "team-non-members-container-team1";
-    document.body.appendChild(nonMembersContainer);
-
-    await serverSideUserSearch("team1", "test");
-
-    expect(membersContainer.innerHTML).toContain("Error searching users");
-  });
-
-  test("handles missing containers", async () => {
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    await serverSideUserSearch("team1", "test");
-
-    expect(consoleSpy).toHaveBeenCalledWith("Team containers not found");
-
-    consoleSpy.mockRestore();
   });
 });

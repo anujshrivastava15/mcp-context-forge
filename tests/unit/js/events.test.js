@@ -28,12 +28,33 @@ vi.mock("../../../mcpgateway/admin_ui/gateway.js", () => ({ getSelectedGatewayId
 vi.mock("../../../mcpgateway/admin_ui/modals", () => ({ closeModal: vi.fn(), openModal: vi.fn() }));
 vi.mock("../../../mcpgateway/admin_ui/monitoring.js", () => ({ initializeRealTimeMonitoring: vi.fn() }));
 vi.mock("../../../mcpgateway/admin_ui/security.js", () => ({ escapeHtml: vi.fn((s) => s || ""), validateInputName: vi.fn((s) => ({ valid: true, value: s })), validateUrl: vi.fn(() => ({ valid: true })) }));
-vi.mock("../../../mcpgateway/admin_ui/servers.js", () => ({ ensureAddStoreListeners: vi.fn() }));
+vi.mock("../../../mcpgateway/admin_ui/servers.js", () => ({ 
+  ensureAddStoreListeners: vi.fn(),
+  updateToolMapping: vi.fn(),
+  updatePromptMapping: vi.fn(),
+  updateResourceMapping: vi.fn(),
+  ensureEditStoreListeners: vi.fn()
+}));
 vi.mock("../../../mcpgateway/admin_ui/tags.js", () => ({ initializeTagFiltering: vi.fn() }));
 vi.mock("../../../mcpgateway/admin_ui/teams.js", () => ({ hideTeamEditModal: vi.fn(), initializeAddMembersForms: vi.fn(), initializePasswordValidation: vi.fn(), updateDefaultVisibility: vi.fn() }));
 vi.mock("../../../mcpgateway/admin_ui/tokens.js", () => ({ initializeTeamScopingMonitor: vi.fn() }));
-vi.mock("../../../mcpgateway/admin_ui/tools.js", () => ({ cleanupToolTestState: vi.fn(), editTool: vi.fn(), enrichTool: vi.fn(), generateToolTestCases: vi.fn(), loadTools: vi.fn(), validateTool: vi.fn(), viewTool: vi.fn() }));
+vi.mock("../../../mcpgateway/admin_ui/tools.js", () => ({ 
+  cleanupToolTestState: vi.fn(), 
+  editTool: vi.fn(), 
+  enrichTool: vi.fn(), 
+  generateToolTestCases: vi.fn(), 
+  loadTools: vi.fn(), 
+  validateTool: vi.fn(), 
+  viewTool: vi.fn(),
+  initToolSelect: vi.fn()
+}));
 vi.mock("../../../mcpgateway/admin_ui/users.js", () => ({ hideUserEditModal: vi.fn(), performUserSearch: vi.fn(), registerAdminActionListeners: vi.fn() }));
+vi.mock("../../../mcpgateway/admin_ui/resources.js", () => ({ 
+  initResourceSelect: vi.fn()
+}));
+vi.mock("../../../mcpgateway/admin_ui/prompts.js", () => ({ 
+  initPromptSelect: vi.fn()
+}));
 vi.mock("../../../mcpgateway/admin_ui/initialization.js", () => ({ initializeCodeMirrorEditors: vi.fn(), initializeEventListeners: vi.fn(), initializeExportImport: vi.fn(), initializeGlobalSearch: vi.fn(), initializeSearchInputs: vi.fn(), initializeTabState: vi.fn(), initializeToolSelects: vi.fn(), registerReloadAllResourceSections: vi.fn(), setupBulkImportModal: vi.fn(), setupTooltipsWithAlpine: vi.fn() }));
 vi.mock("../../../mcpgateway/admin_ui/utils.js", () => ({ createMemoizedInit: vi.fn((fn) => ({ init: fn, debouncedInit: vi.fn(), reset: vi.fn() })), safeGetElement: vi.fn((id) => document.getElementById(id)), showErrorMessage: vi.fn(), showSuccessMessage: vi.fn(), updateEditToolUrl: vi.fn() }));
 

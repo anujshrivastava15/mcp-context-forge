@@ -26,15 +26,26 @@ export const AppState = {
       closeHandler: null,
     },
   },
-  _paginationQuerySetters: {},
+  // Pagination URL query state
+  paginationQuerySetters: {},
   editServerSelections: {},
-  /**
-   * Fragment names differ from entity type names for some entities.
-   * e.g. the "servers" toggle navigates to the #catalog tab.
-   */
-  _TOGGLE_FRAGMENT_MAP: {
-    servers: "catalog",
-  },
+
+  // Debounce timers for member and non-member search
+  memberSearchTimers: {},
+  nonMemberSearchTimers: {},
+  // Selection caches to preserve state across searches
+  // nonMemberSelectionsCache: teamId -> {email: role}
+  nonMemberSelectionsCache: {},
+  // memberOverridesCache: teamId -> {email: {checked: bool, role: string}}
+  memberOverridesCache: {},
+
+  // Full model list for the model-id combobox (reset on each modal open)
+  llmAllModels: [],
+  llmModelsFetched: false,
+  llmComboboxActiveIndex: -1,
+  // Monotonic counter — each fetchModelsForModelModal call bumps it; stale
+  // responses (from a prior call to the same or different provider) are discarded.
+  llmFetchSeq: 0,
 
   // Track active modals to prevent multiple opens
   activeModals: new Set(),
@@ -66,6 +77,19 @@ export const AppState = {
     if (typeof cleanupToolTestStateCallback === "function") {
       cleanupToolTestStateCallback();
     }
+
+    this.paginationQuerySetters = {};
+    this.editServerSelections = {};
+
+    this.memberSearchTimers = {};
+    this.nonMemberSearchTimers = {};
+    this.nonMemberSelectionsCache = {};
+    this.memberOverridesCache = {};
+
+    this.llmAllModels = [];
+    this.llmModelsFetched = false;
+    this.llmComboboxActiveIndex = -1;
+    this.llmFetchSeq = 0;
 
     console.log("✓ Application state reset");
   },
@@ -131,5 +155,9 @@ export const AppState = {
 
   setLastActivePaginationRoot(value) {
     this.lastActivePaginationRoot = value;
-  }
+  },
+
+  resetLlmModels() {
+    this.llmAllModels = [];
+  },
 };

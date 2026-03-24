@@ -204,17 +204,12 @@ export const loadVirtualServersForChat = async function () {
                         ${
   requiresToken
     ? `
-                            <div class="tooltip"
-                            style="position: absolute; left: 50%; transform: translateX(-50%); bottom: 120%; margin-bottom: 8px;
-                                    background-color: #6B7280; color: white; font-size: 10px; border-radius: 4px;
-                                    padding: 4px 20px; / * More horizontal width  */
-                                    opacity: 0; visibility: hidden; transition: opacity 0.2s ease-in;
-                                    z-index: 1000;"> <!-- Added higher z-index to ensure it's above other elements -->
-                            ${tooltipMessage}
-                            <div style="position: absolute; left: 50%; bottom: -5px; transform: translateX(-50%);
-                                        width: 0; height: 0; border-left: 5px solid transparent;
-                                        border-right: 5px solid transparent; border-top: 5px solid #6B7280;"></div>
-                            </div>`
+                      <div data-role="tooltip"
+                        class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 bg-gray-500 text-white text-[10px] rounded py-1 px-5 z-30 transition-opacity duration-200 ease-in pointer-events-none"
+                        style="opacity: 0; visibility: hidden;">
+                        ${tooltipMessage}
+                        <div class="absolute left-1/2 -translate-x-1/2 -bottom-[5px] w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-l-transparent border-r-transparent border-t-gray-500"></div>
+                      </div>`
     : ""
 }
 
@@ -237,7 +232,7 @@ export const loadVirtualServersForChat = async function () {
     // Add hover event to show tooltip immediately on hover
     const serverItems = document.querySelectorAll(".server-item");
     serverItems.forEach((item) => {
-      const tooltip = item.querySelector(".tooltip");
+      const tooltip = item.querySelector('[data-role="tooltip"]');
       item.addEventListener("mouseenter", () => {
         if (tooltip) {
           tooltip.style.opacity = "1"; // Make tooltip visible
@@ -997,7 +992,7 @@ const showConnectionSuccess = function () {
       tools.forEach((toolName, index) => {
         const pill = document.createElement("span");
         pill.className =
-          "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/40 dark:to-indigo-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 shadow-sm hover:shadow-md transition-all hover:scale-105";
+          "inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/40 dark:to-indigo-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 shadow-sm hover:shadow-md transition-all hover:scale-105";
 
         // Tool icon
         const icon = document.createElementNS(

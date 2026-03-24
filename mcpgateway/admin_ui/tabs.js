@@ -7,6 +7,7 @@ import { initializeLLMChat } from "./llmChat.js";
 import { searchStructuredLogs } from "./logging.js";
 import { loadAggregatedMetrics } from "./metrics.js";
 import { dispatchPluginAction, filterPlugins, populatePluginFilters } from "./plugins.js";
+import { getPanelSearchConfig, getPanelSearchStateFromUrl, queueSearchablePanelReload } from "./search.js";
 import { escapeHtml, safeReplaceState, safeSetInnerHTML } from "./security.js";
 import {
   setupCreateTokenForm,
@@ -453,15 +454,35 @@ export const showTab = function (tabName) {
         }
 
         if (tabName === "catalog") {
-          // Load servers list if not already loaded
           const serversList = safeGetElement("servers-table");
           if (serversList) {
             const hasLoadingMessage =
               serversList.innerHTML.includes("Loading servers...");
             if (hasLoadingMessage) {
-              // Trigger HTMX load manually if HTMX is available
               if (window.htmx && window.htmx.trigger) {
                 window.htmx.trigger(serversList, "load");
+              }
+            } else {
+              const catalogConfig = getPanelSearchConfig("catalog");
+              if (catalogConfig) {
+                const searchState = getPanelSearchStateFromUrl(
+                  catalogConfig.tableName
+                );
+                const tagInput = document.getElementById(
+                  catalogConfig.tagInputId
+                );
+                const searchInput = document.getElementById(
+                  catalogConfig.searchInputId
+                );
+                if (tagInput && searchState.tags) {
+                  tagInput.value = searchState.tags;
+                }
+                if (searchInput && searchState.query) {
+                  searchInput.value = searchState.query;
+                }
+                if (searchState.tags || searchState.query) {
+                  queueSearchablePanelReload("catalog", 0);
+                }
               }
             }
           }

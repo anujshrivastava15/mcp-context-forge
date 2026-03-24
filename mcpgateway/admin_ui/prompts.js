@@ -1081,7 +1081,7 @@ export const buildPromptTestForm = function (prompt) {
     input.id = `prompt-arg-${index}`;
     input.name = `arg-${arg.name}`;
     input.className =
-      "mt-1 px-1.5 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300";
+      "mt-1 px-3 py-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300";
 
     if (arg.description) {
       input.placeholder = arg.description;

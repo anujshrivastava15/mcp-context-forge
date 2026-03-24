@@ -9,7 +9,7 @@ import { paginationData } from "../../../mcpgateway/admin_ui/pagination.js";
 // Mock AppState
 vi.mock("../../../mcpgateway/admin_ui/appState.js", () => ({
   AppState: {
-    _paginationQuerySetters: {},
+    paginationQuerySetters: {},
   },
 }));
 
@@ -306,7 +306,7 @@ describe("paginationData", () => {
 
   test("loadPage() applies extra query params from AppState", async () => {
     const { AppState } = await import("../../../mcpgateway/admin_ui/appState.js");
-    AppState._paginationQuerySetters.tools = (url) => {
+    AppState.paginationQuerySetters.tools = (url) => {
       url.searchParams.set("custom_param", "value");
     };
     component.init();

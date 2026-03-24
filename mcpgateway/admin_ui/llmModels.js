@@ -1,6 +1,7 @@
+import { AppState } from "./appState.js";
 import { showCopyableModal } from "./modals.js";
-import { escapeHtml, parseErrorResponse } from "./security.js";
-import { fetchWithAuth, getAuthToken } from "./tokens.js";
+import { parseErrorResponse } from "./security.js";
+import { getAuthToken } from "./tokens.js";
 import { safeGetElement, showToast } from "./utils.js";
 
 // ===================================================================
@@ -713,6 +714,9 @@ export const showAddModelModal = async function () {
   safeGetElement("llm-model-id").value = "";
   safeGetElement("llm-model-form").reset();
   safeGetElement("llm-model-modal-title").textContent = "Add LLM Model";
+  AppState.resetLlmModels();
+  AppState.llmModelsFetched = false;
+  llmModelComboboxClose();
 
   // Populate providers dropdown
   await populateProviderDropdown();
@@ -762,11 +766,12 @@ export const closeLLMModelModal = function () {
 export const onModelProviderChange = async function () {
   const providerId = safeGetElement("llm-model-provider").value;
   const modelInput = safeGetElement("llm-model-model-id");
-  const datalist = safeGetElement("llm-model-suggestions");
   const statusEl = safeGetElement("llm-model-fetch-status");
 
   // Clear existing suggestions
-  datalist.innerHTML = "";
+  AppState.resetLlmModels();
+  AppState.llmModelsFetched = false;
+  llmModelComboboxClose();
 
   if (!providerId) {
     modelInput.placeholder = "Select provider first...";
@@ -784,14 +789,16 @@ export const onModelProviderChange = async function () {
  * Fetch available models for the model modal
  */
 export const fetchModelsForModelModal = async function () {
-  const providerId = safeGetElement("llm-model-provider").value;
-  const datalist = safeGetElement("llm-model-suggestions");
+  const providerSelect = document.getElementById("llm-model-provider");
+  const providerId = providerSelect.value;
   const statusEl = safeGetElement("llm-model-fetch-status");
 
   if (!providerId) {
     showToast("Please select a provider first", "warning");
     return;
   }
+
+  const seq = ++AppState.llmFetchSeq;
 
   statusEl.textContent = "Fetching models...";
   statusEl.classList.remove("hidden");
@@ -809,26 +816,29 @@ export const fetchModelsForModelModal = async function () {
 
     const result = await response.json();
 
-    if (result.success && result.models && result.models.length > 0) {
-      // Populate datalist with model suggestions
-      datalist.innerHTML = "";
-      result.models.forEach((model) => {
-        const option = document.createElement("option");
-        option.value = model.id;
-        option.textContent = model.name || model.id;
-        datalist.appendChild(option);
-      });
+    // Discard stale: provider changed, or a newer request superseded this one
+    if (providerSelect.value !== providerId || seq !== AppState.llmFetchSeq) return;
 
+    if (result.success && result.models && result.models.length > 0) {
+      AppState.llmAllModels = result.models;
+      AppState.llmModelsFetched = true;
+      renderLLMModelDropdown(AppState.llmAllModels);
       statusEl.textContent = `Found ${result.models.length} models. Type to filter or enter custom.`;
       statusEl.classList.remove("hidden");
     } else {
+      AppState.resetLlmModels();
+      AppState.llmModelsFetched = true;
       statusEl.textContent =
-        result.error || "No models found. Enter model ID manually.";
+          result.error || "No models found. Enter model ID manually.";
       statusEl.classList.remove("hidden");
     }
   } catch (error) {
     console.error("Error fetching models:", error);
-    statusEl.textContent = "Failed to fetch models. Enter model ID manually.";
+    if (providerSelect.value !== providerId || seq !== AppState.llmFetchSeq) return;
+    AppState.resetLlmModels();
+    AppState.llmModelsFetched = true;
+    statusEl.textContent =
+      "Failed to fetch models. Enter model ID manually.";
     statusEl.classList.remove("hidden");
   }
 };
@@ -837,6 +847,9 @@ export const fetchModelsForModelModal = async function () {
  * Edit LLM Model
  */
 export const editLLMModel = async function (modelId) {
+  AppState.resetLlmModels();
+  AppState.llmModelsFetched = false;
+  llmModelComboboxClose();
   try {
     const response = await fetch(`${window.ROOT_PATH}/llm/models/${modelId}`, {
       headers: {
@@ -1181,259 +1194,123 @@ export const overviewDashboard = function () {
   };
 };
 
-// Debounce helper for search
-const searchDebounceTimers = {};
-export const debouncedServerSideUserSearch = function (
-  teamId,
-  searchTerm,
-  delay = 300,
-) {
-  if (searchDebounceTimers[teamId]) {
-    clearTimeout(searchDebounceTimers[teamId]);
-  }
-  searchDebounceTimers[teamId] = setTimeout(() => {
-    serverSideUserSearch(teamId, searchTerm);
-  }, delay);
-};
+export const llmComboboxSetExpanded = function (expanded) {
+  const input = document.getElementById("llm-model-model-id");
+  if (input) input.setAttribute("aria-expanded", String(expanded));
+}
 
-// Team user search function - searches all users and splits into members/non-members
-export const serverSideUserSearch = async function (teamId, searchTerm) {
-  const membersContainer = safeGetElement(`team-members-container-${teamId}`);
-  const nonMembersContainer = safeGetElement(
-    `team-non-members-container-${teamId}`,
+export const llmModelComboboxOpen = function () {
+  if (!AppState.llmModelsFetched) return;
+  AppState.llmComboboxActiveIndex = -1;
+  renderLLMModelDropdown(AppState.llmAllModels);
+  document.getElementById("llm-model-dropdown").classList.remove("hidden");
+  llmComboboxSetExpanded(true);
+}
+
+export const llmModelComboboxClose = function () {
+  const ul = document.getElementById("llm-model-dropdown");
+  if (ul) {
+    ul.classList.add("hidden");
+  }
+  AppState.llmComboboxActiveIndex = -1;
+  llmComboboxSetExpanded(false);
+  llmComboboxClearHighlight();
+}
+
+export const llmModelComboboxFilter = function (text) {
+  if (!AppState.llmModelsFetched) return;
+  const lower = text.toLowerCase();
+  const filtered = AppState.llmAllModels.filter((m) =>
+    m.id.toLowerCase().includes(lower)
   );
+  AppState.llmComboboxActiveIndex = -1;
+  renderLLMModelDropdown(filtered);
+  document.getElementById("llm-model-dropdown").classList.remove("hidden");
+  llmComboboxSetExpanded(true);
+}
 
-  if (!membersContainer || !nonMembersContainer) {
-    console.error("Team containers not found");
+export const llmModelComboboxSelect = function (value) {
+  document.getElementById("llm-model-model-id").value = value;
+  llmModelComboboxClose();
+}
+
+export const llmModelComboboxKeydown = function (event) {
+  const ul = document.getElementById("llm-model-dropdown");
+  if (!ul || ul.classList.contains("hidden")) return;
+  const items = ul.querySelectorAll("li[data-model-id]");
+  if (!items.length) return;
+
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    AppState.llmComboboxActiveIndex = Math.min(
+      AppState.llmComboboxActiveIndex + 1,
+      items.length - 1
+    );
+    llmComboboxHighlight(items);
+  } else if (event.key === "ArrowUp") {
+    event.preventDefault();
+    AppState.llmComboboxActiveIndex = Math.max(AppState.llmComboboxActiveIndex - 1, 0);
+    llmComboboxHighlight(items);
+  } else if (event.key === "Enter") {
+    if (AppState.llmComboboxActiveIndex >= 0 && items[AppState.llmComboboxActiveIndex]) {
+      event.preventDefault();
+      llmModelComboboxSelect(items[AppState.llmComboboxActiveIndex].dataset.modelId);
+    }
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    llmModelComboboxClose();
+  }
+}
+
+export const llmComboboxHighlight = function (items) {
+  const ul = document.getElementById("llm-model-dropdown");
+  llmComboboxClearHighlight();
+  if (AppState.llmComboboxActiveIndex >= 0 && items[AppState.llmComboboxActiveIndex]) {
+    const active = items[AppState.llmComboboxActiveIndex];
+    active.classList.add("bg-indigo-100", "dark:bg-indigo-700");
+    active.id = "llm-model-active-option";
+    const input = document.getElementById("llm-model-model-id");
+    if (input) {
+      input.setAttribute("aria-activedescendant", active.id);
+    }
+    if (ul && active.scrollIntoView) {
+      active.scrollIntoView({ block: "nearest" });
+    }
+  }
+}
+
+export const llmComboboxClearHighlight = function () {
+  const ul = document.getElementById("llm-model-dropdown");
+  if (!ul) return;
+  ul.querySelectorAll("li").forEach((li) => {
+    li.classList.remove("bg-indigo-100", "dark:bg-indigo-700");
+    li.removeAttribute("id");
+  });
+  const input = document.getElementById("llm-model-model-id");
+  if (input) input.removeAttribute("aria-activedescendant");
+}
+
+export const renderLLMModelDropdown = function (models) {
+  const ul = document.getElementById("llm-model-dropdown");
+  if (!ul) {
     return;
   }
-
-  // Read per_page from data attributes (set server-side), fallback to 20
-  const membersPerPage =
-    membersContainer.dataset.perPage ||
-    membersContainer.getAttribute("data-per-page") ||
-    20;
-  const nonMembersPerPage =
-    nonMembersContainer.dataset.perPage ||
-    nonMembersContainer.getAttribute("data-per-page") ||
-    20;
-
-  // If search is empty, reload both sections with full data
-  if (!searchTerm || searchTerm.trim() === "") {
-    try {
-      // Reload members - use fetchWithAuth for bearer token support
-      const membersResponse = await fetchWithAuth(
-        `${window.ROOT_PATH}/admin/teams/${teamId}/members/partial?page=1&per_page=${membersPerPage}`,
-      );
-      if (membersResponse.ok) {
-        membersContainer.innerHTML = await membersResponse.text();
-        // Re-initialize HTMX on new content for infinite scroll triggers
-        if (typeof htmx !== "undefined") {
-          window.htmx.process(membersContainer);
-        }
-      }
-
-      // Reload non-members
-      const nonMembersResponse = await fetchWithAuth(
-        `${window.ROOT_PATH}/admin/teams/${teamId}/non-members/partial?page=1&per_page=${nonMembersPerPage}`,
-      );
-      if (nonMembersResponse.ok) {
-        nonMembersContainer.innerHTML = await nonMembersResponse.text();
-        // Re-initialize HTMX on new content for infinite scroll triggers
-        if (typeof htmx !== "undefined") {
-          window.htmx.process(nonMembersContainer);
-        }
-      }
-    } catch (error) {
-      console.error("Error reloading user lists:", error);
-    }
+  ul.innerHTML = "";
+  if (!models.length) {
+    const li = document.createElement("li");
+    li.className = "px-3 py-2 text-xs text-gray-400 dark:text-gray-500";
+    li.textContent = "No models found. Enter ID manually.";
+    ul.appendChild(li);
     return;
   }
-
-  try {
-    // First, collect member data AND checkbox states from DOM (before search replaces content)
-    const memberDataFromDom = {};
-    const checkboxStates = {}; // Track checkbox states for all visible users
-    const existingMemberItems = document.querySelectorAll(
-      `#team-members-container-${teamId} .user-item`,
-    );
-    existingMemberItems.forEach((item) => {
-      const email = item.dataset.userEmail;
-      if (email) {
-        const roleSelect = item.querySelector(".role-select");
-        const checkbox = item.querySelector(".user-checkbox");
-        memberDataFromDom[email] = {
-          role: roleSelect ? roleSelect.value : "member",
-        };
-        if (checkbox) {
-          checkboxStates[email] = checkbox.checked;
-        }
-      }
-    });
-
-    // Also collect checkbox states from non-members section
-    const existingNonMemberItems = document.querySelectorAll(
-      `#team-non-members-container-${teamId} .user-item`,
-    );
-    existingNonMemberItems.forEach((item) => {
-      const email = item.dataset.userEmail;
-      if (email) {
-        const checkbox = item.querySelector(".user-checkbox");
-        const roleSelect = item.querySelector(".role-select");
-        if (checkbox) {
-          checkboxStates[email] = checkbox.checked;
-          // Also preserve role selection for users being added
-          if (checkbox.checked && roleSelect) {
-            memberDataFromDom[email] = {
-              role: roleSelect.value,
-              pendingAdd: true, // Flag that this is a pending addition
-            };
-          }
-        }
-      }
-    });
-
-    // If no members found in DOM yet, fetch from server to get membership data with roles
-    if (Object.keys(memberDataFromDom).length === 0) {
-      try {
-        const membersResp = await fetchWithAuth(
-          `${window.ROOT_PATH}/admin/teams/${teamId}/members/partial?page=1&per_page=100`,
-        );
-        if (membersResp.ok) {
-          const tempDiv = document.createElement("div");
-          tempDiv.innerHTML = await membersResp.text();
-          tempDiv.querySelectorAll(".user-item").forEach((item) => {
-            const email = item.dataset.userEmail;
-            if (email) {
-              const roleSelect = item.querySelector(".role-select");
-              memberDataFromDom[email] = {
-                role: roleSelect ? roleSelect.value : "member",
-              };
-            }
-          });
-        }
-      } catch (e) {
-        console.error("Error fetching member data:", e);
-      }
-    }
-
-    // Search all users - use fetchWithAuth for bearer token support
-    const searchUrl = `${window.ROOT_PATH}/admin/users/search?q=${encodeURIComponent(searchTerm)}&limit=100`;
-    const response = await fetchWithAuth(searchUrl);
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-
-    if (data.users && data.users.length > 0) {
-      // Split users into members and non-members based on collected data
-      const members = [];
-      const nonMembers = [];
-
-      data.users.forEach((user) => {
-        if (memberDataFromDom[user.email]) {
-          members.push({
-            ...user,
-            role: memberDataFromDom[user.email].role,
-          });
-        } else {
-          nonMembers.push(user);
-        }
-      });
-
-      // Render members with preserved roles, checkbox states, and loadedMembers hidden input
-      let membersHtml = "";
-      members.forEach((user) => {
-        const fullName = escapeHtml(user.full_name || user.email);
-        const email = escapeHtml(user.email);
-        const role = user.role || "member";
-        const isOwner = role === "owner";
-        // Preserve checkbox state if available, otherwise default to checked for existing members
-        const isChecked =
-          checkboxStates[user.email] !== undefined
-            ? checkboxStates[user.email]
-            : true;
-        membersHtml += `
-      <div class="flex items-center space-x-3 text-gray-700 dark:text-gray-300 mb-2 p-3 hover:bg-indigo-50 dark:hover:bg-indigo-900 rounded-md user-item border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-900/20" data-user-email="${email}">
-          <div class="flex-shrink-0">
-              <div class="w-8 h-8 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center">
-                  <span class="text-sm font-medium text-gray-700 dark:text-gray-300">${user.email[0].toUpperCase()}</span>
-              </div>
-          </div>
-          <input type="hidden" name="loadedMembers" value="${email}" />
-          <input type="checkbox" name="associatedUsers" value="${email}" data-user-name="${fullName}" class="user-checkbox form-checkbox h-5 w-5 text-indigo-600 dark:bg-gray-800 dark:border-gray-600 flex-shrink-0" ${isChecked ? "checked" : ""} data-auto-check="true" />
-          <div class="flex-grow min-w-0">
-              <div class="flex items-center gap-2 flex-wrap">
-                  <span class="select-none font-medium text-gray-900 dark:text-white truncate">${fullName}</span>
-                  ${isOwner ? '<span class="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-purple-100 text-purple-800 rounded-full dark:bg-purple-900 dark:text-purple-200">Owner</span>' : ""}
-              </div>
-              <div class="text-sm text-gray-500 dark:text-gray-400 truncate">${email}</div>
-          </div>
-          <select name="role_${encodeURIComponent(user.email)}" class="role-select text-sm px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white flex-shrink-0">
-              <option value="member" ${!isOwner ? "selected" : ""}>Member</option>
-              <option value="owner" ${isOwner ? "selected" : ""}>Owner</option>
-          </select>
-      </div>
-  `;
-      });
-
-      // Render non-members with preserved checkbox states and roles
-      let nonMembersHtml = "";
-      nonMembers.forEach((user) => {
-        const fullName = escapeHtml(user.full_name || user.email);
-        const email = escapeHtml(user.email);
-        // Preserve checkbox state if available, otherwise default to unchecked for non-members
-        const isChecked =
-          checkboxStates[user.email] !== undefined
-            ? checkboxStates[user.email]
-            : false;
-        // Preserve role selection for users being added
-        const pendingData = memberDataFromDom[user.email];
-        const role =
-          pendingData && pendingData.pendingAdd ? pendingData.role : "member";
-        const isOwner = role === "owner";
-        nonMembersHtml += `
-      <div class="flex items-center space-x-3 text-gray-700 dark:text-gray-300 mb-2 p-3 hover:bg-indigo-50 dark:hover:bg-indigo-900 rounded-md user-item border border-transparent" data-user-email="${email}" data-is-member="false">
-          <div class="flex-shrink-0">
-              <div class="w-8 h-8 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center">
-                  <span class="text-sm font-medium text-gray-700 dark:text-gray-300">${user.email[0].toUpperCase()}</span>
-              </div>
-          </div>
-          <input type="checkbox" name="associatedUsers" value="${email}" data-user-name="${fullName}" class="user-checkbox form-checkbox h-5 w-5 text-indigo-600 dark:bg-gray-800 dark:border-gray-600 flex-shrink-0" ${isChecked ? "checked" : ""} />
-          <div class="flex-grow min-w-0">
-              <div class="flex items-center gap-2 flex-wrap">
-                  <span class="select-none font-medium text-gray-900 dark:text-white truncate">${fullName}</span>
-              </div>
-              <div class="text-sm text-gray-500 dark:text-gray-400 truncate">${email}</div>
-          </div>
-          <select name="role_${encodeURIComponent(user.email)}" class="role-select text-sm px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white flex-shrink-0">
-              <option value="member" ${!isOwner ? "selected" : ""}>Member</option>
-              <option value="owner" ${isOwner ? "selected" : ""}>Owner</option>
-          </select>
-      </div>
-  `;
-      });
-
-      membersContainer.innerHTML =
-        membersHtml ||
-        '<div class="text-center py-4 text-gray-500 dark:text-gray-400">No matching members</div>';
-      nonMembersContainer.innerHTML =
-        nonMembersHtml ||
-        '<div class="text-center py-4 text-gray-500 dark:text-gray-400">No matching users</div>';
-    } else {
-      // No results
-      membersContainer.innerHTML =
-        '<div class="text-center py-4 text-gray-500 dark:text-gray-400">No matching members</div>';
-      nonMembersContainer.innerHTML =
-        '<div class="text-center py-4 text-gray-500 dark:text-gray-400">No matching users</div>';
-    }
-  } catch (error) {
-    console.error("Error searching users:", error);
-    membersContainer.innerHTML =
-      '<div class="text-center py-4 text-red-600">Error searching users</div>';
-    nonMembersContainer.innerHTML =
-      '<div class="text-center py-4 text-red-600">Error searching users</div>';
-  }
-};
+  models.forEach((m) => {
+    const li = document.createElement("li");
+    li.className =
+      "px-3 py-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100";
+    li.setAttribute("role", "option");
+    li.dataset.modelId = m.id;
+    li.textContent = m.id;
+    ul.appendChild(li);
+  });
+}

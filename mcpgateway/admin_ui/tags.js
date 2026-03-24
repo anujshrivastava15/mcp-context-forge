@@ -2,7 +2,7 @@
 // TAG FILTERING FUNCTIONALITY
 // ===============================================
 
-import { getPanelSearchConfig, loadSearchablePanel, queueSearchablePanelReload } from "./search.js";
+import { getPanelSearchConfig, loadSearchablePanel, queueSearchablePanelReload, updatePanelSearchStateInUrl } from "./search.js";
 import { safeGetElement } from "./utils.js";
 
 /**
@@ -12,12 +12,29 @@ import { safeGetElement } from "./utils.js";
  */
 export const extractAvailableTags = function (entityType) {
   const tags = new Set();
+
+  if (entityType === "catalog") {
+    document
+      .querySelectorAll("#servers-table-body [data-tag]")
+      .forEach((el) => {
+        const t = el.getAttribute("data-tag").trim();
+        const lowerT = t.toLowerCase();
+        if (
+          t &&
+          t.length >= 2 &&
+          t.length <= 50 &&
+          lowerT !== "no tags" &&
+          lowerT !== "none" &&
+          lowerT !== "n/a"
+        ) {
+          tags.add(t);
+        }
+      });
+    return Array.from(tags).sort();
+  }
+
   const tableSelector = `#${entityType}-panel tbody tr:not(.inactive-row)`;
   const rows = document.querySelectorAll(tableSelector);
-
-  console.log(
-    `[DEBUG] extractAvailableTags for ${entityType}: Found ${rows.length} rows`
-  );
 
   // Find the Tags column index by examining the table header
   const tableHeaderSelector = `#${entityType}-panel thead tr th`;
@@ -28,9 +45,6 @@ export const extractAvailableTags = function (entityType) {
     const headerText = header.textContent.trim().toLowerCase();
     if (headerText === "tags") {
       tagsColumnIndex = index;
-      console.log(
-        `[DEBUG] Found Tags column at index ${index} for ${entityType}`
-      );
     }
   });
 
@@ -44,45 +58,24 @@ export const extractAvailableTags = function (entityType) {
 
     if (tagsColumnIndex < cells.length) {
       const tagsCell = cells[tagsColumnIndex];
-
-      // Look for tag badges ONLY within the Tags column
-      const tagElements = tagsCell.querySelectorAll(`
-          span.inline-flex.items-center.px-2.py-0\\.5.rounded.text-xs.font-medium.bg-blue-100.text-blue-800,
-          span.inline-block.bg-blue-100.text-blue-800.text-xs.px-2.py-1.rounded-full
-      `);
-
-      console.log(
-        `[DEBUG] Row ${index}: Found ${tagElements.length} tag elements in Tags column`
-      );
-
-      tagElements.forEach((tagEl) => {
-        const tagText = tagEl.textContent.trim();
-        console.log(`[DEBUG] Row ${index}: Tag element text: "${tagText}"`);
-
-        // Basic validation for tag content
+      tagsCell.querySelectorAll("[data-tag]").forEach((el) => {
+        const t = el.getAttribute("data-tag").trim();
+        const lowerT = t.toLowerCase();
         if (
-          tagText &&
-          tagText !== "No tags" &&
-          tagText !== "None" &&
-          tagText !== "N/A" &&
-          tagText.length >= 2 &&
-          tagText.length <= 50
+          t &&
+          t.length >= 2 &&
+          t.length <= 50 &&
+          lowerT !== "no tags" &&
+          lowerT !== "none" &&
+          lowerT !== "n/a"
         ) {
-          tags.add(tagText);
-          console.log(`[DEBUG] Row ${index}: Added tag: "${tagText}"`);
-        } else {
-          console.log(`[DEBUG] Row ${index}: Filtered out: "${tagText}"`);
+          tags.add(t);
         }
       });
     }
   });
 
-  const result = Array.from(tags).sort();
-  console.log(
-    `[DEBUG] extractAvailableTags for ${entityType}: Final result:`,
-    result
-  );
-  return result;
+  return Array.from(tags).sort();
 };
 
 /**
@@ -140,34 +133,11 @@ export const filterEntitiesByTags = function (entityType, tagsInput) {
       return;
     }
 
-    // Extract tags from this row using specific tag selectors (not status badges)
+    // Extract tags from this row using data-tag attributes
     const rowTags = new Set();
-
-    const tagElements = row.querySelectorAll(`
-          /* Gateways */
-          span.inline-block.bg-blue-100.text-blue-800.text-xs.px-2.py-1.rounded-full,
-          /* A2A Agents */
-          span.inline-flex.items-center.px-2.py-1.rounded.text-xs.bg-gray-100.text-gray-700,
-          /* Prompts & Resources */
-          span.inline-flex.items-center.px-2.py-0\\.5.rounded.text-xs.font-medium.bg-blue-100.text-blue-800,
-          /* Gray tags for A2A agent metadata */
-          span.inline-flex.items-center.px-2\\.5.py-0\\.5.rounded-full.text-xs.font-medium.bg-gray-100.text-gray-700
-      `);
-
-    tagElements.forEach((tagEl) => {
-      const tagText = tagEl.textContent.trim().toLowerCase();
-      // Filter out any remaining non-tag content
-      if (
-        tagText &&
-        tagText !== "no tags" &&
-        tagText !== "none" &&
-        tagText !== "active" &&
-        tagText !== "inactive" &&
-        tagText !== "online" &&
-        tagText !== "offline"
-      ) {
-        rowTags.add(tagText);
-      }
+    row.querySelectorAll("[data-tag]").forEach((el) => {
+      const t = el.getAttribute("data-tag").trim().toLowerCase();
+      if (t) rowTags.add(t);
     });
 
     // Check if any of the filter tags match any of the row tags (OR logic)
@@ -195,7 +165,11 @@ export const filterEntitiesByTags = function (entityType, tagsInput) {
  * @param {string} tag - The tag to add
  */
 export const addTagToFilter = function (entityType, tag) {
-  const filterInput = safeGetElement(`${entityType}-tag-filter`);
+  const panelConfig = getPanelSearchConfig(entityType);
+  const tagInputId = panelConfig
+    ? panelConfig.tagInputId
+    : `${entityType}-tag-filter`;
+  const filterInput = document.getElementById(tagInputId);
   if (!filterInput) {
     return;
   }
@@ -207,7 +181,15 @@ export const addTagToFilter = function (entityType, tag) {
   if (!currentTags.includes(tag)) {
     currentTags.push(tag);
     filterInput.value = currentTags.join(", ");
-    if (getPanelSearchConfig(entityType)) {
+    if (panelConfig) {
+      const searchInput = document.getElementById(
+        panelConfig.searchInputId,
+      );
+      updatePanelSearchStateInUrl(
+        panelConfig.tableName,
+        searchInput?.value || "",
+        filterInput.value,
+      );
       queueSearchablePanelReload(entityType, 0);
     } else {
       filterEntitiesByTags(entityType, filterInput.value);
@@ -270,12 +252,16 @@ export const updateFilterEmptyState = function (
  * @param {string} entityType - The entity type
  */
 export const clearTagFilter = function (entityType) {
-  const filterInput = safeGetElement(`${entityType}-tag-filter`);
+  const panelConfig = getPanelSearchConfig(entityType);
+  const tagInputId = panelConfig
+    ? panelConfig.tagInputId
+    : `${entityType}-tag-filter`;
+  const filterInput = document.getElementById(tagInputId);
   if (filterInput) {
     filterInput.value = "";
     // Apply immediate local reset for responsive UX and test compatibility.
     filterEntitiesByTags(entityType, "");
-    if (getPanelSearchConfig(entityType)) {
+    if (panelConfig) {
       loadSearchablePanel(entityType);
     }
   }

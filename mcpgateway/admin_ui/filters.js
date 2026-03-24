@@ -1,3 +1,4 @@
+import { PANEL_SEARCH_CONFIG } from "./constants.js";
 import { getSelectedGatewayIds } from "./gateway.js";
 import { safeGetElement } from "./utils.js";
 
@@ -409,4 +410,26 @@ export const toggleViewPublic = function (checkboxId, containerIds, teamId) {
       window.htmx.trigger(container, "load");
     });
   };
-}
+};
+
+/**
+ * Update visible filter-status text for each table panel.
+ * Shows "Filters active" when any filter (search, tags, inactive) is active.
+ */
+export const updateFilterStatus = function () {
+  Object.values(PANEL_SEARCH_CONFIG).forEach((config) => {
+    const statusEl = document.getElementById(
+      config.tableName + "-filter-status"
+    );
+    if (!statusEl) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const prefix = config.tableName + "_";
+    const hasQuery = Boolean(params.get(prefix + "q"));
+    const hasTags = Boolean(params.get(prefix + "tags"));
+    const hasInactive = params.get(prefix + "inactive") === "true";
+
+    statusEl.textContent =
+      hasQuery || hasTags || hasInactive ? "Filters active" : "";
+  });
+};

@@ -1,15 +1,16 @@
+import { AppState } from "./appState.js";
 import {
   GLOBAL_SEARCH_ENTITY_CONFIG,
   PANEL_SEARCH_CONFIG,
+  SEARCH_CONFIGS,
 } from "./constants.js";
 import { getSelectedGatewayIds } from "./gateway.js";
-import { initPromptSelect } from "./prompts.js";
-import { initResourceSelect } from "./resources.js";
 import { escapeHtml, safeReplaceState } from "./security.js";
-import { getEditSelections, updatePromptMapping, updateResourceMapping, updateToolMapping } from "./servers.js";
+import {
+  getEditSelections,
+} from "./servers.js";
 import { getUiHiddenSections, showTab } from "./tabs.js";
 import { fetchWithAuth, performTokenSearch } from "./tokens.js";
-import { initToolSelect } from "./tools.js";
 import { getCurrentTeamId, isAdminUser, safeGetElement } from "./utils.js";
 
 const panelSearchReloadTimers = {};
@@ -133,17 +134,20 @@ export const clearSearch = function (entityType) {
       }
       // Clear URL search params to ensure clean state
       updatePanelSearchStateInUrl(panelConfig.tableName, "", "");
-      
+
       // Set up listener for HTMX afterSwap to apply client-side filter on new content
       const handleAfterSwap = (event) => {
         const target = event.detail.target;
-        if (target && target.id === panelConfig.targetSelector.replace('#', '')) {
+        if (
+          target &&
+          target.id === panelConfig.targetSelector.replace("#", "")
+        ) {
           document.body.removeEventListener("htmx:afterSwap", handleAfterSwap);
         }
       };
-      
+
       document.body.addEventListener("htmx:afterSwap", handleAfterSwap);
-      
+
       // Trigger HTMX reload
       loadSearchablePanel(entityType);
       return;
@@ -240,9 +244,7 @@ export const renderGlobalSearchResults = function (payload) {
   container
     .querySelectorAll('[data-action="navigate-search-result"]')
     .forEach((btn) => {
-      btn.addEventListener("click", () =>
-        navigateToGlobalSearchResult(btn),
-      );
+      btn.addEventListener("click", () => navigateToGlobalSearchResult(btn));
     });
 };
 
@@ -376,7 +378,12 @@ export const navigateToGlobalSearchResult = function (button) {
  * @param {string} entityLabel  - Human-readable label (e.g. "tool", "MCP server")
  * @returns {{ msg: HTMLElement|null, span: HTMLElement|null }}
  */
-export const ensureNoResultsElement = function (containerId, msgId, spanId, entityLabel) {
+export const ensureNoResultsElement = function (
+  containerId,
+  msgId,
+  spanId,
+  entityLabel
+) {
   let msg = document.getElementById(msgId);
   let span = document.getElementById(spanId);
   if (msg) {
@@ -405,163 +412,6 @@ export const ensureNoResultsElement = function (containerId, msgId, spanId, enti
   // Insert right after the container
   container.parentNode.insertBefore(msg, container.nextSibling);
   return { msg, span };
-}
-
-// Configuration objects for each search type
-const searchConfigs = {
-  toolsAdd: {
-    type: 'tools',
-    context: 'add',
-    containerId: 'associatedTools',
-    inputName: 'associatedTools',
-    apiEndpoint: '/admin/tools/search',
-    partialEndpoint: '/admin/tools/partial',
-    dataKey: 'tools',
-    updateMapping: updateToolMapping,
-    initSelector: initToolSelect,
-    color: 'indigo',
-    itemClass: 'tool-item',
-    checkboxClass: 'tool-checkbox',
-    noResultsId: 'noToolsMessage',
-    searchQueryId: 'searchQueryTools',
-    pillsId: 'selectedToolsPills',
-    warningId: 'selectedToolsWarning',
-    selectAllBtnId: 'selectAllToolsBtn',
-    clearAllBtnId: 'clearAllToolsBtn',
-    viewPublicCheckboxId: 'add-server-view-public',
-    dataNameAttr: 'data-tool-name',
-    mappingKey: 'toolMapping',
-    logPrefix: 'Tool Search',
-    getDisplayName: (tool) => tool.display_name || tool.custom_name || tool.name || tool.id
-  },
-  promptsAdd: {
-    type: 'prompts',
-    context: 'add',
-    containerId: 'associatedPrompts',
-    inputName: 'associatedPrompts',
-    apiEndpoint: '/admin/prompts/search',
-    partialEndpoint: '/admin/prompts/partial',
-    dataKey: 'prompts',
-    updateMapping: updatePromptMapping,
-    initSelector: initPromptSelect,
-    color: 'purple',
-    itemClass: 'prompt-item',
-    checkboxClass: 'prompt-checkbox',
-    noResultsId: 'noPromptsMessage',
-    searchQueryId: 'searchPromptsQuery',
-    pillsId: 'selectedPromptsPills',
-    warningId: 'selectedPromptsWarning',
-    selectAllBtnId: 'selectAllPromptsBtn',
-    clearAllBtnId: 'clearAllPromptsBtn',
-    viewPublicCheckboxId: 'add-server-view-public',
-    dataNameAttr: 'data-prompt-name',
-    mappingKey: 'promptMapping',
-    logPrefix: 'Prompt Search',
-    getDisplayName: (prompt) => prompt.displayName || prompt.display_name || prompt.originalName || prompt.original_name || prompt.name || prompt.id
-  },
-  resourcesAdd: {
-    type: 'resources',
-    context: 'add',
-    containerId: 'associatedResources',
-    inputName: 'associatedResources',
-    apiEndpoint: '/admin/resources/search',
-    partialEndpoint: '/admin/resources/partial',
-    dataKey: 'resources',
-    updateMapping: updateResourceMapping,
-    initSelector: initResourceSelect,
-    color: 'purple',
-    itemClass: 'resource-item',
-    checkboxClass: 'resource-checkbox',
-    noResultsId: 'noResourcesMessage',
-    searchQueryId: 'searchResourcesQuery',
-    pillsId: 'selectedResourcesPills',
-    warningId: 'selectedResourcesWarning',
-    selectAllBtnId: 'selectAllResourcesBtn',
-    clearAllBtnId: 'clearAllResourcesBtn',
-    viewPublicCheckboxId: 'add-server-view-public',
-    dataNameAttr: 'data-resource-name',
-    mappingKey: 'resourceMapping',
-    logPrefix: 'Resource Search',
-    getDisplayName: (resource) => resource.name || resource.id
-  },
-  toolsEdit: {
-    type: 'tools',
-    context: 'edit',
-    containerId: 'edit-server-tools',
-    inputName: 'associatedTools',
-    apiEndpoint: '/admin/tools/search',
-    partialEndpoint: '/admin/tools/partial',
-    dataKey: 'tools',
-    dataAttribute: 'data-server-tools',
-    updateMapping: updateToolMapping,
-    initSelector: initToolSelect,
-    color: 'indigo',
-    itemClass: 'tool-item',
-    checkboxClass: 'tool-checkbox',
-    noResultsId: 'noEditToolsMessage',
-    searchQueryId: 'searchQueryEditTools',
-    pillsId: 'selectedEditToolsPills',
-    warningId: 'selectedEditToolsWarning',
-    selectAllBtnId: 'selectAllEditToolsBtn',
-    clearAllBtnId: 'clearAllEditToolsBtn',
-    viewPublicCheckboxId: 'edit-server-view-public',
-    dataNameAttr: 'data-tool-name',
-    mappingKey: 'toolMapping',
-    logPrefix: 'Edit Tool Search',
-    getDisplayName: (tool) => tool.display_name || tool.custom_name || tool.name || tool.id
-  },
-  promptsEdit: {
-    type: 'prompts',
-    context: 'edit',
-    containerId: 'edit-server-prompts',
-    inputName: 'associatedPrompts',
-    apiEndpoint: '/admin/prompts/search',
-    partialEndpoint: '/admin/prompts/partial',
-    dataKey: 'prompts',
-    dataAttribute: 'data-server-prompts',
-    updateMapping: updatePromptMapping,
-    initSelector: initPromptSelect,
-    color: 'indigo',
-    itemClass: 'prompt-item',
-    checkboxClass: 'prompt-checkbox',
-    noResultsId: 'noEditPromptsMessage',
-    searchQueryId: 'searchQueryEditPrompts',
-    pillsId: 'selectedEditPromptsPills',
-    warningId: 'selectedEditPromptsWarning',
-    selectAllBtnId: 'selectAllEditPromptsBtn',
-    clearAllBtnId: 'clearAllEditPromptsBtn',
-    viewPublicCheckboxId: 'edit-server-view-public',
-    dataNameAttr: 'data-prompt-name',
-    mappingKey: 'promptMapping',
-    logPrefix: 'Edit Prompt Search',
-    getDisplayName: (prompt) => prompt.displayName || prompt.display_name || prompt.originalName || prompt.original_name || prompt.name || prompt.id
-  },
-  resourcesEdit: {
-    type: 'resources',
-    context: 'edit',
-    containerId: 'edit-server-resources',
-    inputName: 'associatedResources',
-    apiEndpoint: '/admin/resources/search',
-    partialEndpoint: '/admin/resources/partial',
-    dataKey: 'resources',
-    dataAttribute: 'data-server-resources',
-    updateMapping: updateResourceMapping,
-    initSelector: initResourceSelect,
-    color: 'indigo',
-    itemClass: 'resource-item',
-    checkboxClass: 'resource-checkbox',
-    noResultsId: 'noEditResourcesMessage',
-    searchQueryId: 'searchQueryEditResources',
-    pillsId: 'selectedEditResourcesPills',
-    warningId: 'selectedEditResourcesWarning',
-    selectAllBtnId: 'selectAllEditResourcesBtn',
-    clearAllBtnId: 'clearAllEditResourcesBtn',
-    viewPublicCheckboxId: 'edit-server-view-public',
-    dataNameAttr: 'data-resource-name',
-    mappingKey: 'resourceMapping',
-    logPrefix: 'Edit Resource Search',
-    getDisplayName: (resource) => resource.name || resource.id
-  }
 };
 
 /**
@@ -588,24 +438,32 @@ export const serverSideSearch = async function (config, searchTerm) {
   container.style.display = "";
 
   // Get selected gateway IDs
-  const selectedGatewayIds = getSelectedGatewayIds ? getSelectedGatewayIds() : [];
-  const gatewayIdParam = selectedGatewayIds.length > 0 ? selectedGatewayIds.join(",") : "";
+  const selectedGatewayIds = getSelectedGatewayIds
+    ? getSelectedGatewayIds()
+    : [];
+  const gatewayIdParam =
+    selectedGatewayIds.length > 0 ? selectedGatewayIds.join(",") : "";
 
   // Flush current DOM state into persistent selection store
   const selections = getEditSelections(config.containerId);
-  container.querySelectorAll(`input[name="${config.inputName}"]`).forEach((cb) => {
-    const value = String(cb.value);
-    if (cb.checked) {
-      selections.add(value);
-    } else {
-      selections.delete(value);
-    }
-  });
+  container
+    .querySelectorAll(`input[name="${config.inputName}"]`)
+    .forEach((cb) => {
+      const value = String(cb.value);
+      if (cb.checked) {
+        selections.add(value);
+      } else {
+        selections.delete(value);
+      }
+    });
 
   // Capture currently checked items for backward compat
-  const currentChecked = config.context === 'edit' 
-    ? Array.from(container.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value)
-    : [];
+  const currentChecked =
+    config.context === "edit"
+      ? Array.from(
+        container.querySelectorAll('input[type="checkbox"]:checked')
+      ).map((cb) => cb.value)
+      : [];
 
   // Show loading state
   container.innerHTML = `
@@ -642,7 +500,7 @@ export const serverSideSearch = async function (config, searchTerm) {
         container.innerHTML = html;
 
         // Restore data attribute for edit context
-        if (config.context === 'edit' && config.dataAttribute) {
+        if (config.context === "edit" && config.dataAttribute) {
           const dataAttr = container.getAttribute(config.dataAttribute);
           if (dataAttr) {
             container.setAttribute(config.dataAttribute, dataAttr);
@@ -658,27 +516,35 @@ export const serverSideSearch = async function (config, searchTerm) {
         // Restore checked state
         try {
           const persistedIds = getEditSelections(config.containerId);
-          
-          if (config.context === 'edit') {
-            currentChecked.forEach(id => persistedIds.add(String(id)));
-            
+
+          if (config.context === "edit") {
+            currentChecked.forEach((id) => persistedIds.add(String(id)));
+
             const dataAttr = container.getAttribute(config.dataAttribute);
             const serverIds = new Set();
             if (dataAttr) {
               const serverData = JSON.parse(dataAttr);
               if (Array.isArray(serverData)) {
-                serverData.forEach(item => serverIds.add(String(item)));
+                serverData.forEach((item) => serverIds.add(String(item)));
               }
             }
 
             if (persistedIds.size > 0 || serverIds.size > 0) {
-              const checkboxes = container.querySelectorAll(`input[name="${config.inputName}"]`);
+              const checkboxes = container.querySelectorAll(
+                `input[name="${config.inputName}"]`
+              );
               checkboxes.forEach((cb) => {
                 const itemId = String(cb.value);
-                const itemName = cb.getAttribute(config.dataNameAttr) || 
-                  (window.Admin[config.mappingKey] && window.Admin[config.mappingKey][itemId]);
-                
-                if (persistedIds.has(itemId) || (itemName && serverIds.has(String(itemName))) || serverIds.has(itemId)) {
+                const itemName =
+                  cb.getAttribute(config.dataNameAttr) ||
+                  (window.Admin[config.mappingKey] &&
+                    window.Admin[config.mappingKey][itemId]);
+
+                if (
+                  persistedIds.has(itemId) ||
+                  (itemName && serverIds.has(String(itemName))) ||
+                  serverIds.has(itemId)
+                ) {
                   cb.checked = true;
                   persistedIds.add(itemId);
                 }
@@ -691,7 +557,9 @@ export const serverSideSearch = async function (config, searchTerm) {
             }
           } else {
             if (persistedIds.size > 0) {
-              const checkboxes = container.querySelectorAll(`input[name="${config.inputName}"]`);
+              const checkboxes = container.querySelectorAll(
+                `input[name="${config.inputName}"]`
+              );
               checkboxes.forEach((cb) => {
                 if (persistedIds.has(String(cb.value))) {
                   cb.checked = true;
@@ -734,7 +602,7 @@ export const serverSideSearch = async function (config, searchTerm) {
     if (gatewayIdParam) {
       params.set("gateway_id", gatewayIdParam);
     }
-    
+
     const viewPublicCb = document.getElementById(config.viewPublicCheckboxId);
     if (selectedTeamId) {
       params.set("team_id", selectedTeamId);
@@ -742,7 +610,7 @@ export const serverSideSearch = async function (config, searchTerm) {
     if (viewPublicCb && viewPublicCb.checked) {
       params.set("include_public", "true");
     }
-    
+
     const searchUrl = `${window.ROOT_PATH}${config.apiEndpoint}?${params.toString()}`;
     console.log(`[${config.logPrefix}] Searching with URL: ${searchUrl}`);
 
@@ -780,25 +648,33 @@ export const serverSideSearch = async function (config, searchTerm) {
       // Restore checked state
       try {
         const persistedIds = getEditSelections(config.containerId);
-        
-        if (config.context === 'edit') {
+
+        if (config.context === "edit") {
           const dataAttr = container.getAttribute(config.dataAttribute);
           const serverIds = new Set();
           if (dataAttr) {
             const serverData = JSON.parse(dataAttr);
             if (Array.isArray(serverData)) {
-              serverData.forEach(item => serverIds.add(String(item)));
+              serverData.forEach((item) => serverIds.add(String(item)));
             }
           }
 
           if (persistedIds.size > 0 || serverIds.size > 0) {
-            const checkboxes = container.querySelectorAll(`input[name="${config.inputName}"]`);
+            const checkboxes = container.querySelectorAll(
+              `input[name="${config.inputName}"]`
+            );
             checkboxes.forEach((cb) => {
               const itemId = String(cb.value);
-              const itemName = cb.getAttribute(config.dataNameAttr) ||
-                (window.Admin[config.mappingKey] && window.Admin[config.mappingKey][itemId]);
-              
-              if (persistedIds.has(itemId) || (itemName && serverIds.has(String(itemName))) || serverIds.has(itemId)) {
+              const itemName =
+                cb.getAttribute(config.dataNameAttr) ||
+                (window.Admin[config.mappingKey] &&
+                  window.Admin[config.mappingKey][itemId]);
+
+              if (
+                persistedIds.has(itemId) ||
+                (itemName && serverIds.has(String(itemName))) ||
+                serverIds.has(itemId)
+              ) {
                 cb.checked = true;
                 persistedIds.add(itemId);
               }
@@ -811,7 +687,9 @@ export const serverSideSearch = async function (config, searchTerm) {
           }
         } else {
           if (persistedIds.size > 0) {
-            const checkboxes = container.querySelectorAll(`input[name="${config.inputName}"]`);
+            const checkboxes = container.querySelectorAll(
+              `input[name="${config.inputName}"]`
+            );
             checkboxes.forEach((cb) => {
               if (persistedIds.has(String(cb.value))) {
                 cb.checked = true;
@@ -862,40 +740,225 @@ export const serverSideSearch = async function (config, searchTerm) {
  * Perform server-side search for tools and update the tool list
  */
 export const serverSideToolSearch = async function (searchTerm) {
-  return serverSideSearch(searchConfigs.toolsAdd, searchTerm);
+  return serverSideSearch(SEARCH_CONFIGS.toolsAdd, searchTerm);
 };
 
 /**
  * Perform server-side search for prompts and update the prompt list
  */
 export const serverSidePromptSearch = async function (searchTerm) {
-  return serverSideSearch(searchConfigs.promptsAdd, searchTerm);
+  return serverSideSearch(SEARCH_CONFIGS.promptsAdd, searchTerm);
 };
 
 /**
  * Perform server-side search for resources and update the resources list
  */
 export const serverSideResourceSearch = async function (searchTerm) {
-  return serverSideSearch(searchConfigs.resourcesAdd, searchTerm);
+  return serverSideSearch(SEARCH_CONFIGS.resourcesAdd, searchTerm);
 };
 
 /**
  * Perform server-side search for tools in the edit-server selector and update the list
  */
 export const serverSideEditToolSearch = async function (searchTerm) {
-  return serverSideSearch(searchConfigs.toolsEdit, searchTerm);
+  return serverSideSearch(SEARCH_CONFIGS.toolsEdit, searchTerm);
 };
 
 /**
  * Perform server-side search for prompts in the edit-server selector and update the list
  */
 export const serverSideEditPromptsSearch = async function (searchTerm) {
-  return serverSideSearch(searchConfigs.promptsEdit, searchTerm);
+  return serverSideSearch(SEARCH_CONFIGS.promptsEdit, searchTerm);
 };
 
 /**
  * Perform server-side search for resources in the edit-server selector and update the list
  */
 export const serverSideEditResourcesSearch = async function (searchTerm) {
-  return serverSideSearch(searchConfigs.resourcesEdit, searchTerm);
+  return serverSideSearch(SEARCH_CONFIGS.resourcesEdit, searchTerm);
 };
+
+export const captureNonMemberSelections = function (teamId) {
+  const container = document.getElementById(
+    `team-non-members-container-${teamId}`
+  );
+  if (!container) return;
+  if (!AppState.nonMemberSelectionsCache[teamId]) {
+    AppState.nonMemberSelectionsCache[teamId] = {};
+  }
+  container.querySelectorAll(".user-item").forEach((item) => {
+    const email = item.getAttribute("data-user-email");
+    if (!email) return;
+    const cb = item.querySelector('input[name="associatedUsers"]');
+    const roleSelect = item.querySelector(".role-select");
+    if (cb && cb.checked && !cb.getAttribute("data-auto-check")) {
+      AppState.nonMemberSelectionsCache[teamId][email] = roleSelect
+        ? roleSelect.value
+        : "member";
+    } else if (cb && !cb.checked && !cb.getAttribute("data-auto-check")) {
+      delete AppState.nonMemberSelectionsCache[teamId][email];
+    }
+  });
+}
+
+export const restoreNonMemberSelections = function (teamId) {
+  const container = document.getElementById(
+    `team-non-members-container-${teamId}`
+  );
+  if (!container || !AppState.nonMemberSelectionsCache[teamId]) return;
+  const cache = AppState.nonMemberSelectionsCache[teamId];
+  const visibleEmails = new Set();
+  container.querySelectorAll(".user-item").forEach((item) => {
+    const email = item.getAttribute("data-user-email");
+    if (!email) return;
+    visibleEmails.add(email);
+    if (cache[email] !== undefined) {
+      const cb = item.querySelector('input[name="associatedUsers"]');
+      const roleSelect = item.querySelector(".role-select");
+      if (cb) cb.checked = true;
+      if (roleSelect) roleSelect.value = cache[email];
+    }
+  });
+  container.querySelectorAll(".cached-selection").forEach((el) => el.remove());
+  for (const [email, role] of Object.entries(cache)) {
+    if (!visibleEmails.has(email)) {
+      const wrapper = document.createElement("div");
+      wrapper.className = "cached-selection hidden";
+      const cbHidden = document.createElement("input");
+      cbHidden.type = "checkbox";
+      cbHidden.name = "associatedUsers";
+      cbHidden.value = email;
+      cbHidden.checked = true;
+      cbHidden.className = "hidden";
+      const roleHidden = document.createElement("input");
+      roleHidden.type = "hidden";
+      roleHidden.name = "role_" + encodeURIComponent(email);
+      roleHidden.value = role;
+      wrapper.appendChild(cbHidden);
+      wrapper.appendChild(roleHidden);
+      container.appendChild(wrapper);
+    }
+  }
+}
+
+export const captureMemberOverrides = function (teamId) {
+  const container = document.getElementById(`team-members-container-${teamId}`);
+  if (!container) return;
+  if (!AppState.memberOverridesCache[teamId]) {
+    AppState.memberOverridesCache[teamId] = {};
+  }
+  container.querySelectorAll(".user-item").forEach((item) => {
+    const email = item.getAttribute("data-user-email");
+    if (!email) return;
+    const cb = item.querySelector('input[name="associatedUsers"]');
+    const roleSelect = item.querySelector(".role-select");
+    if (cb && cb.getAttribute("data-auto-check") === "true") {
+      if (!cb.checked || (roleSelect && roleSelect.value)) {
+        AppState.memberOverridesCache[teamId][email] = {
+          checked: cb.checked,
+          role: roleSelect ? roleSelect.value : "member",
+        };
+      }
+    }
+  });
+}
+
+export const restoreMemberOverrides = function (teamId) {
+  const container = document.getElementById(`team-members-container-${teamId}`);
+  if (!container || !AppState.memberOverridesCache[teamId]) return;
+  const cache = AppState.memberOverridesCache[teamId];
+  container.querySelectorAll(".user-item").forEach((item) => {
+    const email = item.getAttribute("data-user-email");
+    if (!email || !cache[email]) return;
+    const cb = item.querySelector('input[name="associatedUsers"]');
+    const roleSelect = item.querySelector(".role-select");
+    if (cb) cb.checked = cache[email].checked;
+    if (roleSelect) roleSelect.value = cache[email].role;
+  });
+}
+
+export const debouncedMemberSearch = function (teamId, searchTerm, delay = 300) {
+  if (AppState.memberSearchTimers[teamId]) {
+    clearTimeout(AppState.memberSearchTimers[teamId]);
+  }
+  AppState.memberSearchTimers[teamId] = setTimeout(() => {
+    serverSideMemberSearch(teamId, searchTerm);
+  }, delay);
+}
+
+export const debouncedNonMemberSearch = function (teamId, searchTerm, delay = 300) {
+  if (AppState.nonMemberSearchTimers[teamId]) {
+    clearTimeout(AppState.nonMemberSearchTimers[teamId]);
+  }
+  AppState.nonMemberSearchTimers[teamId] = setTimeout(() => {
+    serverSideNonMemberSearch(teamId, searchTerm);
+  }, delay);
+}
+
+// Search current team members via server-side filtering
+export const serverSideMemberSearch = async function (teamId, searchTerm) {
+  const container = document.getElementById(`team-members-container-${teamId}`);
+  if (!container) {
+    return;
+  }
+  captureMemberOverrides(teamId);
+  const perPage =
+    container.dataset.perPage || container.getAttribute("data-per-page") || 50;
+  try {
+    const searchParam =
+      searchTerm && searchTerm.trim() !== ""
+        ? `&search=${encodeURIComponent(searchTerm.trim())}`
+        : "";
+    const response = await fetchWithAuth(
+      `${window.ROOT_PATH}/admin/teams/${teamId}/members/partial?page=1&per_page=${perPage}${searchParam}`
+    );
+    if (response.ok) {
+      container.innerHTML = await response.text();
+      if (typeof htmx !== "undefined") {
+        window.htmx.process(container);
+      }
+      restoreMemberOverrides(teamId);
+    }
+  } catch (error) {
+    console.error("Error searching members:", error);
+    container.innerHTML =
+      '<div class="text-center py-4 text-red-600">Error searching members</div>';
+  }
+}
+
+// Search non-members (users not in team) via server-side filtering
+export const serverSideNonMemberSearch = async function (teamId, searchTerm) {
+  const container = document.getElementById(
+    `team-non-members-container-${teamId}`
+  );
+  if (!container) {
+    return;
+  }
+
+  captureNonMemberSelections(teamId);
+
+  // Require at least 2 characters for non-member search
+  if (!searchTerm || searchTerm.trim().length < 2) {
+    container.innerHTML =
+      '<div class="text-center py-4 text-gray-500 dark:text-gray-400">Type at least 2 characters to search for users.</div>';
+    restoreNonMemberSelections(teamId);
+    return;
+  }
+
+  try {
+    const response = await fetchWithAuth(
+      `${window.ROOT_PATH}/admin/teams/${teamId}/non-members/partial?page=1&per_page=50&search=${encodeURIComponent(searchTerm.trim())}`
+    );
+    if (response.ok) {
+      container.innerHTML = await response.text();
+      if (typeof htmx !== "undefined") {
+        window.htmx.process(container);
+      }
+      restoreNonMemberSelections(teamId);
+    }
+  } catch (error) {
+    console.error("Error searching non-members:", error);
+    container.innerHTML =
+      '<div class="text-center py-4 text-red-600">Error searching users</div>';
+  }
+}

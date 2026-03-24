@@ -118,9 +118,10 @@ Admin.resetImportFile = resetImportFile;
 Admin.updateDropZoneStatus = updateDropZoneStatus;
 
 // Filtering
-import { filterServerTable } from "./filters.js";
+import { filterServerTable, updateFilterStatus } from "./filters.js";
 
 Admin.filterServerTable = filterServerTable;
+Admin.updateFilterStatus = updateFilterStatus;
 
 // Form Fields
 import {
@@ -177,7 +178,6 @@ import {
   checkLLMProviderHealth,
   closeLLMModelModal,
   closeLLMProviderModal,
-  debouncedServerSideUserSearch,
   deleteLLMModel,
   deleteLLMProvider,
   editLLMModel,
@@ -186,12 +186,16 @@ import {
   fetchModelsForModelModal,
   filterModelsByProvider,
   llmApiInfoApp,
+  llmModelComboboxClose,
+  llmModelComboboxFilter,
+  llmModelComboboxKeydown,
+  llmModelComboboxOpen,
+  llmModelComboboxSelect,
   onLLMProviderTypeChange,
   onModelProviderChange,
   overviewDashboard,
   saveLLMModel,
   saveLLMProvider,
-  serverSideUserSearch,
   showAddModelModal,
   showAddProviderModal,
   switchLLMSettingsTab,
@@ -203,7 +207,6 @@ import {
 Admin.checkLLMProviderHealth = checkLLMProviderHealth;
 Admin.closeLLMModelModal = closeLLMModelModal;
 Admin.closeLLMProviderModal = closeLLMProviderModal;
-Admin.debouncedServerSideUserSearch = debouncedServerSideUserSearch;
 Admin.deleteLLMModel = deleteLLMModel;
 Admin.deleteLLMProvider = deleteLLMProvider;
 Admin.editLLMModel = editLLMModel;
@@ -212,12 +215,16 @@ Admin.fetchLLMProviderModels = fetchLLMProviderModels;
 Admin.fetchModelsForModelModal = fetchModelsForModelModal;
 Admin.filterModelsByProvider = filterModelsByProvider;
 Admin.llmApiInfoApp = llmApiInfoApp;
+Admin.llmModelComboboxClose = llmModelComboboxClose;
+Admin.llmModelComboboxFilter = llmModelComboboxFilter;
+Admin.llmModelComboboxKeydown = llmModelComboboxKeydown;
+Admin.llmModelComboboxOpen = llmModelComboboxOpen;
+Admin.llmModelComboboxSelect = llmModelComboboxSelect;
 Admin.onLLMProviderTypeChange = onLLMProviderTypeChange;
 Admin.onModelProviderChange = onModelProviderChange;
 Admin.overviewDashboard = overviewDashboard;
 Admin.saveLLMModel = saveLLMModel;
 Admin.saveLLMProvider = saveLLMProvider;
-Admin.serverSideUserSearch = serverSideUserSearch;
 Admin.showAddModelModal = showAddModelModal;
 Admin.showAddProviderModal = showAddProviderModal;
 Admin.switchLLMSettingsTab = switchLLMSettingsTab;
@@ -366,14 +373,20 @@ Admin.exportRoot = exportRoot;
 import {
   clearSearch,
   closeGlobalSearchModal,
+  debouncedMemberSearch,
+  debouncedNonMemberSearch,
   navigateToGlobalSearchResult,
   openGlobalSearchModal,
+  serverSideMemberSearch,
 } from "./search.js";
 
 Admin.clearSearch = clearSearch;
 Admin.closeGlobalSearchModal = closeGlobalSearchModal;
+Admin.debouncedMemberSearch = debouncedMemberSearch;
+Admin.debouncedNonMemberSearch = debouncedNonMemberSearch;
 Admin.navigateToGlobalSearchResult = navigateToGlobalSearchResult;
 Admin.openGlobalSearchModal = openGlobalSearchModal;
+Admin.serverSideMemberSearch = serverSideMemberSearch;
 
 // Selective Import
 import {

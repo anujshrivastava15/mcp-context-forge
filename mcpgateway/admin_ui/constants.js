@@ -1,3 +1,8 @@
+import { initPromptSelect } from "./prompts";
+import { initResourceSelect } from "./resources";
+import { updatePromptMapping, updateResourceMapping, updateToolMapping } from "./servers";
+import { initToolSelect } from "./tools";
+
 // Constants
 export const MASKED_AUTH_VALUE = "*****";
 
@@ -31,8 +36,8 @@ export const PANEL_SEARCH_CONFIG = {
     partialPath: "servers/partial",
     targetSelector: "#servers-table",
     indicatorSelector: "#servers-loading",
-    searchInputId: "catalog-search-input",
-    tagInputId: "catalog-tag-filter",
+    searchInputId: "servers-search-input",
+    tagInputId: "servers-tag-filter",
     inactiveCheckboxId: "show-inactive-servers",
     defaultPerPage: 50,
   },
@@ -110,3 +115,190 @@ export const GLOBAL_SEARCH_ENTITY_CONFIG = {
   teams: { label: "Teams", tab: "teams", viewFunction: "showTeamEditModal" },
   users: { label: "Users", tab: "users", viewFunction: "showUserEditModal" },
 };
+
+// Configuration objects for each search type
+export const SEARCH_CONFIGS = {
+  toolsAdd: {
+    type: "tools",
+    context: "add",
+    containerId: "associatedTools",
+    inputName: "associatedTools",
+    apiEndpoint: "/admin/tools/search",
+    partialEndpoint: "/admin/tools/partial",
+    dataKey: "tools",
+    updateMapping: updateToolMapping,
+    initSelector: initToolSelect,
+    color: "indigo",
+    itemClass: "tool-item",
+    checkboxClass: "tool-checkbox",
+    noResultsId: "noToolsMessage",
+    searchQueryId: "searchQueryTools",
+    pillsId: "selectedToolsPills",
+    warningId: "selectedToolsWarning",
+    selectAllBtnId: "selectAllToolsBtn",
+    clearAllBtnId: "clearAllToolsBtn",
+    viewPublicCheckboxId: "add-server-view-public",
+    dataNameAttr: "data-tool-name",
+    mappingKey: "toolMapping",
+    logPrefix: "Tool Search",
+    getDisplayName: (tool) =>
+      tool.display_name || tool.custom_name || tool.name || tool.id,
+  },
+  promptsAdd: {
+    type: "prompts",
+    context: "add",
+    containerId: "associatedPrompts",
+    inputName: "associatedPrompts",
+    apiEndpoint: "/admin/prompts/search",
+    partialEndpoint: "/admin/prompts/partial",
+    dataKey: "prompts",
+    updateMapping: updatePromptMapping,
+    initSelector: initPromptSelect,
+    color: "purple",
+    itemClass: "prompt-item",
+    checkboxClass: "prompt-checkbox",
+    noResultsId: "noPromptsMessage",
+    searchQueryId: "searchPromptsQuery",
+    pillsId: "selectedPromptsPills",
+    warningId: "selectedPromptsWarning",
+    selectAllBtnId: "selectAllPromptsBtn",
+    clearAllBtnId: "clearAllPromptsBtn",
+    viewPublicCheckboxId: "add-server-view-public",
+    dataNameAttr: "data-prompt-name",
+    mappingKey: "promptMapping",
+    logPrefix: "Prompt Search",
+    getDisplayName: (prompt) =>
+      prompt.displayName ||
+      prompt.display_name ||
+      prompt.originalName ||
+      prompt.original_name ||
+      prompt.name ||
+      prompt.id,
+  },
+  resourcesAdd: {
+    type: "resources",
+    context: "add",
+    containerId: "associatedResources",
+    inputName: "associatedResources",
+    apiEndpoint: "/admin/resources/search",
+    partialEndpoint: "/admin/resources/partial",
+    dataKey: "resources",
+    updateMapping: updateResourceMapping,
+    initSelector: initResourceSelect,
+    color: "purple",
+    itemClass: "resource-item",
+    checkboxClass: "resource-checkbox",
+    noResultsId: "noResourcesMessage",
+    searchQueryId: "searchResourcesQuery",
+    pillsId: "selectedResourcesPills",
+    warningId: "selectedResourcesWarning",
+    selectAllBtnId: "selectAllResourcesBtn",
+    clearAllBtnId: "clearAllResourcesBtn",
+    viewPublicCheckboxId: "add-server-view-public",
+    dataNameAttr: "data-resource-name",
+    mappingKey: "resourceMapping",
+    logPrefix: "Resource Search",
+    getDisplayName: (resource) => resource.name || resource.id,
+  },
+  toolsEdit: {
+    type: "tools",
+    context: "edit",
+    containerId: "edit-server-tools",
+    inputName: "associatedTools",
+    apiEndpoint: "/admin/tools/search",
+    partialEndpoint: "/admin/tools/partial",
+    dataKey: "tools",
+    dataAttribute: "data-server-tools",
+    updateMapping: updateToolMapping,
+    initSelector: initToolSelect,
+    color: "indigo",
+    itemClass: "tool-item",
+    checkboxClass: "tool-checkbox",
+    noResultsId: "noEditToolsMessage",
+    searchQueryId: "searchQueryEditTools",
+    pillsId: "selectedEditToolsPills",
+    warningId: "selectedEditToolsWarning",
+    selectAllBtnId: "selectAllEditToolsBtn",
+    clearAllBtnId: "clearAllEditToolsBtn",
+    viewPublicCheckboxId: "edit-server-view-public",
+    dataNameAttr: "data-tool-name",
+    mappingKey: "toolMapping",
+    logPrefix: "Edit Tool Search",
+    getDisplayName: (tool) =>
+      tool.display_name || tool.custom_name || tool.name || tool.id,
+  },
+  promptsEdit: {
+    type: "prompts",
+    context: "edit",
+    containerId: "edit-server-prompts",
+    inputName: "associatedPrompts",
+    apiEndpoint: "/admin/prompts/search",
+    partialEndpoint: "/admin/prompts/partial",
+    dataKey: "prompts",
+    dataAttribute: "data-server-prompts",
+    updateMapping: updatePromptMapping,
+    initSelector: initPromptSelect,
+    color: "indigo",
+    itemClass: "prompt-item",
+    checkboxClass: "prompt-checkbox",
+    noResultsId: "noEditPromptsMessage",
+    searchQueryId: "searchQueryEditPrompts",
+    pillsId: "selectedEditPromptsPills",
+    warningId: "selectedEditPromptsWarning",
+    selectAllBtnId: "selectAllEditPromptsBtn",
+    clearAllBtnId: "clearAllEditPromptsBtn",
+    viewPublicCheckboxId: "edit-server-view-public",
+    dataNameAttr: "data-prompt-name",
+    mappingKey: "promptMapping",
+    logPrefix: "Edit Prompt Search",
+    getDisplayName: (prompt) =>
+      prompt.displayName ||
+      prompt.display_name ||
+      prompt.originalName ||
+      prompt.original_name ||
+      prompt.name ||
+      prompt.id,
+  },
+  resourcesEdit: {
+    type: "resources",
+    context: "edit",
+    containerId: "edit-server-resources",
+    inputName: "associatedResources",
+    apiEndpoint: "/admin/resources/search",
+    partialEndpoint: "/admin/resources/partial",
+    dataKey: "resources",
+    dataAttribute: "data-server-resources",
+    updateMapping: updateResourceMapping,
+    initSelector: initResourceSelect,
+    color: "indigo",
+    itemClass: "resource-item",
+    checkboxClass: "resource-checkbox",
+    noResultsId: "noEditResourcesMessage",
+    searchQueryId: "searchQueryEditResources",
+    pillsId: "selectedEditResourcesPills",
+    warningId: "selectedEditResourcesWarning",
+    selectAllBtnId: "selectAllEditResourcesBtn",
+    clearAllBtnId: "clearAllEditResourcesBtn",
+    viewPublicCheckboxId: "edit-server-view-public",
+    dataNameAttr: "data-resource-name",
+    mappingKey: "resourceMapping",
+    logPrefix: "Edit Resource Search",
+    getDisplayName: (resource) => resource.name || resource.id,
+  },
+};
+
+
+export const TABLE_TO_ENTITY_TYPE = {
+  "servers-table": "catalog",
+  "tools-table": "tools",
+  "resources-table": "resources",
+  "prompts-table": "prompts",
+  "gateways-table": "gateways",
+  "agents-table": "a2a-agents",
+};
+
+/**
+ * Fragment names differ from entity type names for some entities.
+ * e.g. the "servers" toggle navigates to the #catalog tab.
+ */
+export const TOGGLE_FRAGMENT_MAP = { servers: "catalog" };

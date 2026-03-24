@@ -53,7 +53,7 @@ import {
   updateHashForTab,
 } from "./tabs.js";
 import { initToolSelect } from "./tools.js";
-import { fetchWithTimeout, isAdminUser, safeGetElement } from "./utils.js";
+import { bindMcpAppMimeHelper, fetchWithTimeout, isAdminUser, safeGetElement } from "./utils.js";
 import { debouncedServerSideTokenSearch, getTeamNameById } from "./tokens.js";
 import {
   closeGlobalSearchModal,
@@ -372,12 +372,15 @@ const setupAuthenticationToggles = function () {
  * @param {Function} submitHandler - The submit event handler
  * @param {boolean} includeRefreshOnClick - Whether to add click handler for editor refresh
  */
-export const registerFormListeners = function (formId, submitHandler, includeRefreshOnClick = false) {
+export const registerFormListeners = function (formId, submitHandler, includeRefreshOnClick = false, mcpMimeHelpers=[]) {
   const form = safeGetElement(formId);
   if (!form) return;
 
   form.addEventListener("submit", submitHandler);
-
+  if (mcpMimeHelpers.length) {
+    bindMcpAppMimeHelper(...mcpMimeHelpers);
+  }
+  
   if (includeRefreshOnClick) {
     form.addEventListener("click", () => {
       if (getComputedStyle(form).display !== "none") {
@@ -432,6 +435,11 @@ const setupFormHandlers = function () {
   const resourceForm = safeGetElement("add-resource-form");
   if (resourceForm) {
     resourceForm.addEventListener("submit", handleResourceFormSubmit);
+    bindMcpAppMimeHelper(
+      "resource-uri",
+      "resource-mime-type",
+      "resource-mime-helper",
+    );
   }
 
   const promptForm = safeGetElement("add-prompt-form");
@@ -485,7 +493,11 @@ const setupFormHandlers = function () {
   }
 
   registerFormListeners("add-server-form", handleServerFormSubmit);
-  registerFormListeners("edit-server-form", handleEditServerFormSubmit, true);
+  registerFormListeners("edit-server-form", handleEditServerFormSubmit, true, [
+    "edit-resource-uri",
+    "edit-resource-mime-type",
+    "edit-resource-mime-helper",
+  ]);
   registerFormListeners("edit-resource-form", handleEditResFormSubmit, true);
   registerFormListeners("edit-tool-form", handleEditToolFormSubmit, true);
   registerFormListeners("edit-gateway-form", handleEditGatewayFormSubmit, true);
@@ -896,11 +908,12 @@ export const initializeTabState = function () {
   Object.entries(checkboxTableMap).forEach(([id, tableName]) => {
     const checkbox = safeGetElement(id);
     if (checkbox) {
-      // Prefer namespaced param, fall back to legacy for backwards compatibility
+      // Prefer namespaced param, fall back to legacy if present,
+      // otherwise preserve the HTML default (checked attribute)
       const namespacedValue = urlParams.get(tableName + "_inactive");
       if (namespacedValue !== null) {
         checkbox.checked = namespacedValue === "true";
-      } else {
+      } else if (urlParams.has("include_inactive")) {
         checkbox.checked = legacyIncludeInactive;
       }
     }
@@ -1368,7 +1381,7 @@ export const setupTooltipsWithAlpine = function () {
         tooltipEl.textContent = text;
         tooltipEl.setAttribute("role", "tooltip");
         tooltipEl.className =
-          "fixed z-50 max-w-xs px-3 py-2 text-sm text-white bg-black/80 rounded-lg shadow-lg pointer-events-none opacity-0 transition-opacity duration-200";
+          "fixed z-30 max-w-xs px-3 py-2 text-sm text-white bg-black/80 rounded-lg shadow-lg pointer-events-none opacity-0 transition-opacity duration-200";
 
         document.body.appendChild(tooltipEl);
 

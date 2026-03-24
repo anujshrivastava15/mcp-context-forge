@@ -14,6 +14,8 @@ import {
 import { fetchWithTimeout } from "../../../mcpgateway/admin_ui/utils";
 import { openModal } from "../../../mcpgateway/admin_ui/modals";
 import { AppState } from "../../../mcpgateway/admin_ui/appState.js";
+import { fetchWithAuth } from "../../../mcpgateway/admin_ui/tokens.js";
+import { debouncedServerSideUserSearch } from "../../../mcpgateway/admin_ui/search.js";
 
 vi.mock("../../../mcpgateway/admin_ui/appState.js", () => ({
   AppState: {
@@ -39,6 +41,9 @@ vi.mock("../../../mcpgateway/admin_ui/security.js", () => ({
   escapeHtml: vi.fn((s) => (s != null ? String(s) : "")),
   validateInputName: vi.fn((s) => ({ valid: true, value: s })),
   validateUrl: vi.fn(() => ({ valid: true })),
+}));
+vi.mock("../../../mcpgateway/admin_ui/tokens.js", () => ({
+  fetchWithAuth: vi.fn(),
 }));
 vi.mock("../../../mcpgateway/admin_ui/utils", () => ({
   safeGetElement: vi.fn((id) => document.getElementById(id)),
@@ -906,3 +911,10 @@ describe("ensureAddStoreListeners", () => {
     expect(window._addStoreListenersAttached).toBe(true);
   });
 });
+
+
+
+// ---------------------------------------------------------------------------
+// debouncedServerSideUserSearch / serverSideUserSearch
+// ---------------------------------------------------------------------------
+

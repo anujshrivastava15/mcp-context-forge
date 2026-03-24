@@ -535,7 +535,7 @@ const createToken = async function (form) {
 const showTokenCreatedModal = function (tokenData) {
   const modal = document.createElement("div");
   modal.className =
-    "fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50";
+    "fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-40";
   modal.innerHTML = `
             <div class="relative top-20 mx-auto p-5 border w-11/12 max-w-lg shadow-lg rounded-md bg-white dark:bg-gray-800">
                 <div class="mt-3">
@@ -708,7 +708,7 @@ const viewTokenUsage = async function (tokenId) {
 export const showUsageStatsModal = function (stats) {
   const modal = document.createElement("div");
   modal.className =
-    "fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50";
+    "fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-40";
   modal.innerHTML = `
             <div class="relative top-20 mx-auto p-5 border w-11/12 max-w-2xl shadow-lg rounded-md bg-white dark:bg-gray-800">
                 <div class="flex items-center justify-between mb-4">
@@ -861,7 +861,7 @@ export const showTokenDetailsModal = function (token) {
 
   const modal = document.createElement("div");
   modal.className =
-    "fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50";
+    "fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-40";
   modal.innerHTML = `
             <div class="relative top-10 mx-auto p-5 border w-11/12 max-w-2xl shadow-lg rounded-md bg-white dark:bg-gray-800 mb-10">
                 <div class="flex items-center justify-between mb-4">

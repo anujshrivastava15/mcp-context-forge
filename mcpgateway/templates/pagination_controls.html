@@ -323,7 +323,7 @@
 
 {% if query_params %}
 <script>
-  Admin.AppState._paginationQuerySetters[{{ table_name | default('') | tojson }}] = function(url) {
+  Admin.AppState.paginationQuerySetters[{{ table_name | default('') | tojson }}] = function(url) {
     {% for key, value in query_params.items() %}
     {% if key != 'include_inactive' and value is not none %}
     url.searchParams.set({{ key | tojson }}, {{ value | tojson }});

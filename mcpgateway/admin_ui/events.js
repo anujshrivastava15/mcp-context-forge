@@ -1,6 +1,7 @@
 import { AppState } from "./appState.js";
 import { initializeCACertUpload } from "./caCertificate.js";
-import { toggleViewPublic } from "./filters.js";
+import { TABLE_TO_ENTITY_TYPE } from "./constants.js";
+import { toggleViewPublic, updateFilterStatus } from "./filters.js";
 import { selectTeamFromSelector } from "./formFieldHandlers.js";
 import { setupFormValidation } from "./formValidation.js";
 import { initGatewaySelect } from "./gateway.js";
@@ -16,10 +17,11 @@ import {
   setupBulkImportModal,
   setupTooltipsWithAlpine,
 } from "./initialization.js";
+import { llmModelComboboxSelect } from "./llmModels.js";
 import { closeModal } from "./modals.js";
 import { initializeRealTimeMonitoring } from "./monitoring.js";
 import { ensureAddStoreListeners } from "./servers.js";
-import { initializeTagFiltering } from "./tags.js";
+import { initializeTagFiltering, updateAvailableTags } from "./tags.js";
 import {
   hideTeamEditModal,
   initializeAddMembersForms,
@@ -27,7 +29,15 @@ import {
   updateDefaultVisibility,
 } from "./teams.js";
 import { initializeTeamScopingMonitor } from "./tokens.js";
-import { cleanupToolTestState, editTool, enrichTool, generateToolTestCases, loadTools, validateTool, viewTool } from "./tools.js";
+import {
+  cleanupToolTestState,
+  editTool,
+  enrichTool,
+  generateToolTestCases,
+  loadTools,
+  validateTool,
+  viewTool,
+} from "./tools.js";
 import {
   hideUserEditModal,
   performUserSearch,
@@ -416,8 +426,6 @@ import {
     }
   });
 
-
-
   /**
    * Close modal when clicking outside of it
    */
@@ -565,27 +573,21 @@ import {
     // Re-initialize search inputs when HTMX content loads
     // Only re-initialize if the swap affects search-related content
     document.body.addEventListener("htmx:afterSwap", function (event) {
-      const target = event.detail.target;
-      const relevantPanels = [
-        "catalog-panel",
-        "gateways-panel",
-        "tools-panel",
-        "resources-panel",
-        "prompts-panel",
-        "a2a-agents-panel",
-      ];
-
-      if (
-        target &&
-        relevantPanels.some(
-          (panelId) => target.id === panelId || target.closest(`#${panelId}`)
-        )
-      ) {
+      const targetId = event.detail.target && event.detail.target.id;
+      if (targetId && TABLE_TO_ENTITY_TYPE[targetId]) {
         console.log(
-          `📝 HTMX swap detected in ${target.id}, resetting search state`
+          `📝 HTMX swap detected in ${targetId}, resetting search state`
         );
         resetSearchInputsState();
         initializeSearchInputsDebounced();
+      }
+    });
+
+    document.body.addEventListener("htmx:afterSettle", function (event) {
+      const targetId = event.detail.target && event.detail.target.id;
+      const entityType = targetId && TABLE_TO_ENTITY_TYPE[targetId];
+      if (entityType) {
+        updateAvailableTags(entityType);
       }
     });
 
@@ -602,12 +604,23 @@ import {
     });
   });
 
+  // Wire up delegated events on the dropdown once at load time
+  document.addEventListener("DOMContentLoaded", () => {
+    const ul = document.getElementById("llm-model-dropdown");
+    if (!ul) return;
+    ul.addEventListener("mousedown", (e) => e.preventDefault());
+    ul.addEventListener("click", (e) => {
+      const li = e.target.closest("li[data-model-id]");
+      if (li) llmModelComboboxSelect(li.dataset.modelId);
+    });
+  });
+
   document.addEventListener("DOMContentLoaded", function () {
     initializeRealTimeMonitoring();
   });
 
   // ===============================================
-  // TAG FILTERING FUNCTIONALITY
+  // FILTERING FUNCTIONALITY
   // ===============================================
 
   // Initialize tag filtering when page loads
@@ -624,6 +637,29 @@ import {
   } else {
     registerAdminActionListeners();
   }
+
+  /**
+   * Rehydrate search inputs and filter status after HTMX content swaps.
+   * This ensures that search/tag values from the URL are restored into the
+   * input elements after pagination or partial refresh replaces table content.
+   */
+  document.addEventListener("htmx:afterSettle", function (evt) {
+    const target = evt.detail?.target;
+    if (!target || !target.id) return;
+
+    // Only rehydrate when a table partial or pagination was swapped
+    const isTableSwap =
+      target.id.endsWith("-table") ||
+      target.id.endsWith("-table-body") ||
+      target.id.endsWith("-list-container");
+    const isPaginationSwap = target.id.endsWith("-pagination-controls");
+
+    if (isTableSwap || isPaginationSwap) {
+      resetSearchInputsState();
+      initializeSearchInputsMemoized();
+      updateFilterStatus();
+    }
+  });
 
   // ===================================================================
   // GLOBAL ERROR HANDLERS
@@ -716,7 +752,7 @@ import {
           const buttons = row.querySelectorAll(
             "[data-action='edit-tool'], [data-action='enrich-tool'], [data-action='validate-tool'], [data-action='generate-tool-tests'], " +
               "button[onclick*='edit'], button[onclick*='Edit'], button[onclick*='enrich'], button[onclick*='Enrich'], button[onclick*='validate'], " +
-              "button[onclick*='Validate'], button[onclick*='generateTool'], button[onclick*='Generate']",
+              "button[onclick*='Validate'], button[onclick*='generateTool'], button[onclick*='Generate']"
           );
           for (let b = 0; b < buttons.length; b++) {
             buttons[b].remove();
@@ -773,15 +809,15 @@ import {
       const root = e.target.closest("[data-table-name]");
       if (root) AppState.setLastActivePaginationRoot(root);
     });
-  
+
     document.addEventListener("keydown", (e) => {
       if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") {
         return;
       }
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-  
+
       e.preventDefault();
-  
+
       // Use the last-interacted control; fall back to the first visible one.
       let root = AppState.getLastActivePaginationRoot();
       if (!root || root.offsetParent === null) {
@@ -802,4 +838,3 @@ import {
     });
   });
 })(window.Admin);
-

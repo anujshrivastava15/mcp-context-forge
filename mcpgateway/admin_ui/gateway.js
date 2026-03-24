@@ -396,6 +396,7 @@ export const editGateway = async function (gatewayId) {
     const oauthTokenUrlField = safeGetElement("oauth-token-url-gw-edit");
     const oauthAuthUrlField = safeGetElement("oauth-authorization-url-gw-edit");
     const oauthRedirectUriField = safeGetElement("oauth-redirect-uri-gw-edit");
+    const oauthIssuerField = safeGetElement("oauth-issuer-gw-edit");
     const oauthScopesField = safeGetElement("oauth-scopes-gw-edit");
     const oauthAuthCodeFields = safeGetElement(
       "oauth-auth-code-fields-gw-edit"
@@ -492,35 +493,36 @@ export const editGateway = async function (gatewayId) {
         // Populate OAuth fields if available
         if (gateway.oauthConfig) {
           const config = gateway.oauthConfig;
-          if (oauthGrantTypeField && config.grant_type) {
-            oauthGrantTypeField.value = config.grant_type;
+          if (oauthIssuerField) {
+            oauthIssuerField.value = config.issuer || "";
+          }
+          if (oauthGrantTypeField) {
+            oauthGrantTypeField.value = config.grant_type || "";
             // Show/hide authorization code fields based on grant type
             if (oauthAuthCodeFields) {
               oauthAuthCodeFields.style.display =
                 config.grant_type === "authorization_code" ? "block" : "none";
             }
           }
-          if (oauthClientIdField && config.client_id) {
-            oauthClientIdField.value = config.client_id;
+          if (oauthClientIdField) {
+            oauthClientIdField.value = config.client_id || "";
           }
           if (oauthClientSecretField) {
             oauthClientSecretField.value = ""; // Don't populate secret for security
           }
-          if (oauthTokenUrlField && config.token_url) {
-            oauthTokenUrlField.value = config.token_url;
+          if (oauthTokenUrlField) {
+            oauthTokenUrlField.value = config.token_url || "";
           }
-          if (oauthAuthUrlField && config.authorization_url) {
-            oauthAuthUrlField.value = config.authorization_url;
+          if (oauthAuthUrlField) {
+            oauthAuthUrlField.value = config.authorization_url || "";
           }
-          if (oauthRedirectUriField && config.redirect_uri) {
-            oauthRedirectUriField.value = config.redirect_uri;
+          if (oauthRedirectUriField) {
+            oauthRedirectUriField.value = config.redirect_uri || "";
           }
-          if (
-            oauthScopesField &&
-            config.scopes &&
-            Array.isArray(config.scopes)
-          ) {
-            oauthScopesField.value = config.scopes.join(" ");
+          if (oauthScopesField) {
+            oauthScopesField.value = Array.isArray(config.scopes)
+              ? config.scopes.join(" ")
+              : "";
           }
         }
         break;

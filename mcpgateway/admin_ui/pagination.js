@@ -143,10 +143,10 @@ export function paginationData() {
       }
 
       // Apply extra query params registered by the template's per-instance
-      // <script> block (AppState._paginationQuerySetters[tableName]).
+      // <script> block (AppState.paginationQuerySetters[tableName]).
       // Each pagination_controls.html include that has query_params renders
       // a tojson-escaped setter function under its table_name key.
-      const setter = AppState._paginationQuerySetters[this.tableName];
+      const setter = AppState.paginationQuerySetters[this.tableName];
       if (setter) setter(url);
 
       // Preserve team_id filter from the current URL.

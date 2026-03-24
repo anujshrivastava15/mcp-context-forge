@@ -1,4 +1,4 @@
-import { AppState } from "./appState.js";
+import { TOGGLE_FRAGMENT_MAP } from "./constants.js";
 import { navigateAdmin } from "./navigation.js";
 import { getCookie, isInactiveChecked } from "./utils.js";
 
@@ -38,7 +38,7 @@ export const handleToggleSubmit = async function (event, type) {
     });
 
     // Use HTMX to refresh the table instead of full page reload
-    const fragment = AppState._TOGGLE_FRAGMENT_MAP[type] || type;
+    const fragment = TOGGLE_FRAGMENT_MAP[type] || type;
     const params = new URLSearchParams();
     if (isInactiveCheckedBool) {
       params.set("include_inactive", "true");
@@ -52,7 +52,7 @@ export const handleToggleSubmit = async function (event, type) {
     const partialUrl = `${window.ROOT_PATH}/admin/${type}/partial?${params.toString()}`;
     
     if (window.htmx) {
-      htmx.ajax('GET', partialUrl, {
+      window.htmx.ajax('GET', partialUrl, {
         target: `#${tableId}`,
         swap: 'outerHTML'
       });
@@ -63,7 +63,7 @@ export const handleToggleSubmit = async function (event, type) {
   } catch (e) {
     // Network error — still navigate so the user sees refreshed state.
     console.error("Toggle submit error:", e);
-    const fragment = AppState._TOGGLE_FRAGMENT_MAP[type] || type;
+    const fragment = TOGGLE_FRAGMENT_MAP[type] || type;
     const params = new URLSearchParams();
     if (teamId) {
       params.set("team_id", teamId);

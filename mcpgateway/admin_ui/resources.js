@@ -236,7 +236,7 @@ export const runResourceTest = async function () {
       e.stopPropagation();
     };
     overlay.className =
-      "fixed inset-0 bg-black bg-opacity-70 z-[9999] flex items-center justify-center p-4";
+      "fixed inset-0 bg-black bg-opacity-70 z-40 flex items-center justify-center p-4";
 
     const box = document.createElement("div");
     box.onclick = (e) => {
