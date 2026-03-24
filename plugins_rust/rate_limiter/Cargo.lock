@@ -1087,8 +1087,6 @@ dependencies = [
  "pyo3-async-runtimes",
  "pyo3-stub-gen",
  "redis",
- "serde",
- "serde_json",
  "thiserror",
  "tokio",
 ]

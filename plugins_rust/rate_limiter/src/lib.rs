@@ -17,13 +17,14 @@ pub mod redis_backend;
 pub mod types;
 
 pub use engine::RateLimiterEngine;
-pub use types::EvalResult;
+pub use types::{EvalDimension, EvalResult};
 
 /// Python module definition.
 #[pymodule]
 fn rate_limiter_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<RateLimiterEngine>()?;
     m.add_class::<EvalResult>()?;
+    m.add_class::<EvalDimension>()?;
     Ok(())
 }
 

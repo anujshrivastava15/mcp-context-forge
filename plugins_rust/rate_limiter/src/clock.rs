@@ -33,28 +33,22 @@ pub struct SystemClock;
 
 impl Clock for SystemClock {
     fn now_monotonic(&self) -> Nanos {
-        use std::time::{Duration, Instant, UNIX_EPOCH};
+        use std::sync::OnceLock;
+        use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
         // Instant is monotonic; we anchor it to a fixed start to get nanoseconds.
-        // We use a thread-local anchor so the monotonic counter is consistent
-        // within a process but not tied to an arbitrary boot epoch.
-        use std::cell::Cell;
-        use std::time::SystemTime;
-        thread_local! {
-            static ANCHOR: Cell<Option<(Instant, u64)>> = const { Cell::new(None) };
-        }
-        ANCHOR.with(|cell| {
-            let (anchor_instant, anchor_nanos) = cell.get().unwrap_or_else(|| {
-                let nanos = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or(Duration::ZERO)
-                    .as_nanos() as u64;
-                let pair = (Instant::now(), nanos);
-                cell.set(Some(pair));
-                pair
-            });
-            let elapsed = anchor_instant.elapsed().as_nanos() as u64;
-            anchor_nanos + elapsed
-        })
+        // We use a process-global anchor so monotonic values are comparable
+        // across threads — required because MemoryStore is shared via RwLock.
+        static ANCHOR: OnceLock<(Instant, u64)> = OnceLock::new();
+        let (anchor_instant, anchor_nanos) = ANCHOR.get_or_init(|| {
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or(Duration::ZERO)
+                .as_nanos() as u64;
+            (Instant::now(), nanos)
+        });
+        let elapsed = anchor_instant.elapsed().as_nanos() as u64;
+        anchor_nanos + elapsed
     }
 
     fn now_unix_secs(&self) -> UnixSecs {

@@ -31,6 +31,8 @@ pub enum ConfigError {
     InvalidRateString(String),
     #[error("rate count must be > 0, got {0}")]
     ZeroCount(u64),
+    #[error("invalid algorithm {0:?}: expected \"fixed_window\", \"sliding_window\", or \"token_bucket\"")]
+    InvalidAlgorithm(String),
 }
 
 /// Parse a rate string like `"30/m"`, `"100/s"`, `"1000/h"`.
@@ -53,9 +55,9 @@ pub fn parse_rate(s: &str) -> Result<RateLimit, ConfigError> {
     }
 
     let window_secs: u64 = match unit_str.trim().to_ascii_lowercase().as_str() {
-        "s" | "sec" | "second" | "seconds" => 1,
-        "m" | "min" | "minute" | "minutes" => 60,
-        "h" | "hr" | "hour" | "hours" => 3600,
+        "s" | "sec" | "second" => 1,
+        "m" | "min" | "minute" => 60,
+        "h" | "hr" | "hour" => 3600,
         _ => return Err(ConfigError::InvalidRateString(s.to_string())),
     };
 
@@ -113,7 +115,7 @@ impl EngineConfig {
             })
             .collect::<Result<HashMap<_, _>, _>>()?;
         let algorithm = Algorithm::from_str(algorithm)
-            .ok_or_else(|| ConfigError::InvalidRateString(algorithm.to_string()))?;
+            .ok_or_else(|| ConfigError::InvalidAlgorithm(algorithm.to_string()))?;
         Ok(Self {
             by_user,
             by_tenant,

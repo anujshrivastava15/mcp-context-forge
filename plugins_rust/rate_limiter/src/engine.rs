@@ -34,18 +34,6 @@ enum EngineBackend {
 // Check descriptor — one entry per active dimension
 // ---------------------------------------------------------------------------
 
-/// A single dimension check passed from Python to `evaluate_many()`.
-///
-/// Python builds this list from context (user_id, tenant_id, tool_name)
-/// and the configured limits — the engine never reads config again on the
-/// hot path (IFACE-01).
-#[derive(Debug, Clone)]
-pub struct Check {
-    pub key: String,
-    pub limit_count: u64,
-    pub window_nanos: u64,
-}
-
 // ---------------------------------------------------------------------------
 // Engine
 // ---------------------------------------------------------------------------

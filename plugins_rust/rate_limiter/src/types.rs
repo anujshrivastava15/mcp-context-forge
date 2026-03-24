@@ -93,6 +93,12 @@ impl EvalResult {
     /// - Among blocked: lowest `retry_after` wins (soonest retry).
     /// - Among allowed: lowest `remaining` wins (closest to limit).
     /// - `retry_after` is set iff the result is blocked.
+    ///
+    /// The "lowest retry_after" policy signals the next state change — the
+    /// caller learns when at least one dimension will re-open, even if other
+    /// dimensions remain blocked longer.  An alternative (max) would
+    /// guarantee success on retry but delays the first attempt.  This is a
+    /// deliberate product-level contract shared by both implementations.
     pub fn from_dims(dims: &[DimResult]) -> Self {
         if dims.is_empty() {
             // No dimensions configured — unlimited.

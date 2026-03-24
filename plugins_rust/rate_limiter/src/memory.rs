@@ -13,14 +13,24 @@
 //   - TokenBucket  (MEM-04): HashMap<key, (tokens_u64_x1000, last_refill_nanos)>
 //
 // Cleanup is amortized on access — no background sweep thread (MEM-05).
+// Idle key eviction runs every ~128 calls to reclaim memory (MEM-06).
 
 use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use parking_lot::RwLock;
 
 use crate::clock::{Nanos, UnixSecs};
 use crate::config::Algorithm;
 use crate::types::DimResult;
+
+/// How often (in calls) the amortized sweep runs.  Power of 2 for cheap
+/// modulo via bitwise AND.  128 means ~0.8% of calls pay the sweep cost.
+const SWEEP_INTERVAL: u64 = 128;
+
+/// Token bucket keys inactive for longer than this are evicted (1 hour in
+/// nanos).  Matches the Python `TokenBucketAlgorithm.sweep` threshold.
+const TOKEN_BUCKET_STALE_NANOS: u64 = 3_600_000_000_000;
 
 // ---------------------------------------------------------------------------
 // Per-key state
@@ -51,13 +61,46 @@ enum KeyState {
 
 pub struct MemoryStore {
     inner: RwLock<HashMap<String, RwLock<KeyState>>>,
+    call_count: AtomicU64,
 }
 
 impl MemoryStore {
     pub fn new() -> Self {
         Self {
             inner: RwLock::new(HashMap::new()),
+            call_count: AtomicU64::new(0),
         }
+    }
+
+    /// Amortized sweep: remove keys whose state is stale (MEM-06).
+    ///
+    /// - FixedWindow: window has elapsed (`now_mono >= window_start + window_nanos`).
+    ///   Uses a conservative 1-hour threshold since window_nanos is not stored per key.
+    /// - SlidingWindow: timestamp deque is empty (all entries already evicted on access).
+    /// - TokenBucket: inactive for > 1 hour (matching Python `TokenBucketAlgorithm.sweep`).
+    fn sweep(&self, now_mono: Nanos) {
+        let mut write = self.inner.write();
+        write.retain(|_key, key_lock| {
+            // Skip keys that are currently write-locked (actively being used).
+            let state = match key_lock.try_read() {
+                Some(guard) => guard,
+                None => return true, // contended — keep
+            };
+            match &*state {
+                KeyState::FixedWindow { window_start, .. } => {
+                    // Evict if the window started more than 1 hour ago.
+                    now_mono.saturating_sub(*window_start) < TOKEN_BUCKET_STALE_NANOS
+                }
+                KeyState::SlidingWindow { timestamps } => {
+                    // Evict if all timestamps have been drained by per-access cleanup.
+                    !timestamps.is_empty()
+                }
+                KeyState::TokenBucket { last_refill, .. } => {
+                    // Evict if inactive for more than 1 hour.
+                    now_mono.saturating_sub(*last_refill) < TOKEN_BUCKET_STALE_NANOS
+                }
+            }
+        });
     }
 
     /// Check the rate for `key` and increment the counter if allowed.
@@ -91,7 +134,7 @@ impl MemoryStore {
                             timestamps: VecDeque::new(),
                         },
                         Algorithm::TokenBucket => KeyState::TokenBucket {
-                            tokens_milli: limit * 1000,
+                            tokens_milli: limit.saturating_mul(1000),
                             last_refill: now_mono,
                         },
                     })
@@ -99,39 +142,47 @@ impl MemoryStore {
             }
         }
 
-        let read = self.inner.read();
-        let key_lock = read.get(key).unwrap();
-        let mut state = key_lock.write();
+        let result = {
+            let read = self.inner.read();
+            let key_lock = read.get(key).unwrap();
+            let mut state = key_lock.write();
 
-        match &mut *state {
-            KeyState::FixedWindow {
-                count,
-                window_start,
-                window_start_unix,
-            } => fixed_window(
-                count,
-                window_start,
-                window_start_unix,
-                limit,
-                window_nanos,
-                now_mono,
-                now_unix,
-            ),
-            KeyState::SlidingWindow { timestamps } => {
-                sliding_window(timestamps, limit, window_nanos, now_mono, now_unix)
+            match &mut *state {
+                KeyState::FixedWindow {
+                    count,
+                    window_start,
+                    window_start_unix,
+                } => fixed_window(
+                    count,
+                    window_start,
+                    window_start_unix,
+                    limit,
+                    window_nanos,
+                    now_mono,
+                    now_unix,
+                ),
+                KeyState::SlidingWindow { timestamps } => {
+                    sliding_window(timestamps, limit, window_nanos, now_mono, now_unix)
+                }
+                KeyState::TokenBucket {
+                    tokens_milli,
+                    last_refill,
+                } => token_bucket(
+                    tokens_milli,
+                    last_refill,
+                    limit,
+                    window_nanos,
+                    now_mono,
+                    now_unix,
+                ),
             }
-            KeyState::TokenBucket {
-                tokens_milli,
-                last_refill,
-            } => token_bucket(
-                tokens_milli,
-                last_refill,
-                limit,
-                window_nanos,
-                now_mono,
-                now_unix,
-            ),
+        };
+        // All locks dropped — amortized sweep (MEM-06).
+        let n = self.call_count.fetch_add(1, Ordering::Relaxed);
+        if n & (SWEEP_INTERVAL - 1) == 0 && n > 0 {
+            self.sweep(now_mono);
         }
+        result
     }
 }
 
@@ -249,11 +300,11 @@ fn token_bucket(
     if elapsed > 0 {
         // tokens_to_add = limit * 1000 * elapsed / window_nanos
         let tokens_to_add = (limit as u128 * 1000 * elapsed as u128 / window_nanos as u128) as u64;
-        *tokens_milli = (*tokens_milli + tokens_to_add).min(limit * 1000);
+        *tokens_milli = (*tokens_milli + tokens_to_add).min(limit.saturating_mul(1000));
         *last_refill = now_mono;
     }
 
-    let cap_milli = limit * 1000;
+    let cap_milli = limit.saturating_mul(1000);
 
     if *tokens_milli >= 1000 {
         *tokens_milli -= 1000;
@@ -468,5 +519,84 @@ mod tests {
         // Different key must still be allowed
         let r = check(&store, "u:y", 3, Algorithm::FixedWindow, T0);
         assert!(r.allowed);
+    }
+
+    // --- Sweep (MEM-06) ---
+
+    #[test]
+    fn sweep_evicts_stale_fixed_window_keys() {
+        let store = MemoryStore::new();
+        check(&store, "sweep:fw", 3, Algorithm::FixedWindow, T0);
+        assert_eq!(store.inner.read().len(), 1);
+
+        // Advance past the 1-hour staleness threshold and trigger sweep.
+        let stale_time = T0 + super::TOKEN_BUCKET_STALE_NANOS + 1;
+        store.sweep(stale_time);
+        assert_eq!(store.inner.read().len(), 0, "stale fixed window key must be evicted");
+    }
+
+    #[test]
+    fn sweep_evicts_empty_sliding_window_keys() {
+        let store = MemoryStore::new();
+        // Create a sliding window entry then advance past the window so
+        // the per-access cleanup drains the deque.
+        check(&store, "sweep:sw", 3, Algorithm::SlidingWindow, T0);
+        assert_eq!(store.inner.read().len(), 1);
+
+        // Access after window elapses — the per-access cutoff drains all timestamps.
+        check(&store, "sweep:sw", 3, Algorithm::SlidingWindow, T0 + WINDOW + 1);
+        // Deque now has one fresh entry; sweep should keep it.
+        store.sweep(T0 + WINDOW + 1);
+        assert_eq!(store.inner.read().len(), 1, "active sliding window key must be kept");
+
+        // Advance far enough that a sweep after window drain would evict.
+        let far_future = T0 + WINDOW * 100;
+        // Access once to create a timestamp, then advance past its window.
+        check(&store, "sweep:sw2", 1, Algorithm::SlidingWindow, T0);
+        let after_window = T0 + WINDOW + 1;
+        // This access drains T0, adds after_window.
+        check(&store, "sweep:sw2", 1, Algorithm::SlidingWindow, after_window);
+        // Now advance far past, access to drain the deque with a blocked request.
+        let _ = check(&store, "sweep:sw2", 1, Algorithm::SlidingWindow, far_future);
+        // The above drains old entries and adds one new one; next access after that window:
+        let very_far = far_future + WINDOW + 1;
+        // This drains the far_future entry (outside window) — but adds a new one.
+        // We need the deque truly empty: exhaust limit then wait.
+        // Simpler: call sweep directly and check that a key with empty deque gets evicted.
+        // Manually construct this scenario:
+        {
+            let read = store.inner.read();
+            if let Some(lock) = read.get("sweep:sw2") {
+                let mut state = lock.write();
+                if let KeyState::SlidingWindow { timestamps } = &mut *state {
+                    timestamps.clear();
+                }
+            }
+        }
+        store.sweep(very_far);
+        assert!(
+            store.inner.read().get("sweep:sw2").is_none(),
+            "sliding window key with empty deque must be evicted"
+        );
+    }
+
+    #[test]
+    fn sweep_evicts_stale_token_bucket_keys() {
+        let store = MemoryStore::new();
+        check(&store, "sweep:tb", 3, Algorithm::TokenBucket, T0);
+        assert_eq!(store.inner.read().len(), 1);
+
+        let stale_time = T0 + super::TOKEN_BUCKET_STALE_NANOS + 1;
+        store.sweep(stale_time);
+        assert_eq!(store.inner.read().len(), 0, "stale token bucket key must be evicted");
+    }
+
+    #[test]
+    fn sweep_keeps_active_keys() {
+        let store = MemoryStore::new();
+        check(&store, "sweep:active", 10, Algorithm::FixedWindow, T0);
+        // Sweep at a time within the staleness threshold — key should be kept.
+        store.sweep(T0 + 1_000_000_000);
+        assert_eq!(store.inner.read().len(), 1, "active key must not be evicted");
     }
 }

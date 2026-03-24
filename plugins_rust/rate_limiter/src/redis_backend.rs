@@ -15,7 +15,6 @@
 use std::cmp::max;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use parking_lot::Mutex;
 use redis::aio::MultiplexedConnection;
@@ -165,15 +164,23 @@ pub struct RedisRateLimiter {
     prefix: String,
 }
 
-fn shared_runtime() -> &'static Runtime {
-    static RUNTIME: OnceLock<Runtime> = OnceLock::new();
-    RUNTIME.get_or_init(|| {
+fn shared_runtime() -> Result<&'static Runtime, redis::RedisError> {
+    static RUNTIME: OnceLock<Result<Runtime, String>> = OnceLock::new();
+    let result = RUNTIME.get_or_init(|| {
         Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
             .build()
-            .expect("tokio runtime must initialise for Redis rate limiter")
-    })
+            .map_err(|e| e.to_string())
+    });
+    match result {
+        Ok(rt) => Ok(rt),
+        Err(msg) => Err(redis::RedisError::from((
+            redis::ErrorKind::IoError,
+            "tokio runtime init failed",
+            msg.clone(),
+        ))),
+    }
 }
 
 impl RedisRateLimiter {
@@ -221,7 +228,7 @@ impl RedisRateLimiter {
         checks: &[(String, u64, u64)],
         now_unix: i64,
     ) -> Result<Vec<DimResult>, redis::RedisError> {
-        shared_runtime().block_on(self.evaluate_many_async(checks, now_unix))
+        shared_runtime()?.block_on(self.evaluate_many_async(checks, now_unix))
     }
 
     pub async fn evaluate_many_async(
@@ -233,10 +240,9 @@ impl RedisRateLimiter {
             return Ok(vec![]);
         }
 
-        let now_float = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs_f64();
+        // Derive from the passed-in now_unix so Python time mocks propagate
+        // to Redis Lua scripts (CORR-02).
+        let now_float = now_unix as f64;
 
         let mut conn = self.connection_async().await?;
         let result = match self.algorithm {

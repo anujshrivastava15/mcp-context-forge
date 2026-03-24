@@ -13,6 +13,15 @@ Enforces rate limits by user, tenant, and/or tool using a pluggable algorithm:
 All three algorithms support both memory and Redis backends with identical
 semantics. The Redis backend uses atomic Lua scripts for each algorithm —
 one round-trip per check with no race conditions.
+
+Security contract — fail-open on error:
+  Both hook methods (prompt_pre_fetch, tool_pre_invoke) catch all unexpected
+  exceptions and allow the request through.  This is a deliberate design
+  choice: an internal engine failure (Rust panic, Redis timeout, config bug)
+  must never block legitimate traffic.  The trade-off is that a sustained
+  engine failure silently disables rate limiting until the error is resolved.
+  Operators should monitor for rate-limiter error logs and treat them as
+  high-priority alerts.
 """
 
 # Future
@@ -164,6 +173,19 @@ def _select_most_restrictive(
     results: list[tuple[bool, int, int, dict[str, Any]]]
 ) -> tuple[bool, int, int, int, dict[str, Any]]:
     """Select the most restrictive rate limit from multiple dimensions.
+
+    Multi-dimension aggregation contract:
+      - Any blocked dimension → overall result is blocked.
+      - Among blocked dimensions: the one with the **lowest** retry_after
+        (soonest unblock) determines the Retry-After header.  This signals
+        the next state change — the caller learns when at least one dimension
+        will re-open, even if other dimensions remain blocked longer.  An
+        alternative (max) would guarantee success on retry but delays the
+        first attempt and hides which dimension unblocked.  This is a
+        deliberate product-level choice shared by both the Python and Rust
+        implementations.
+      - Among allowed dimensions: the one with the fewest remaining requests
+        determines the header values (closest to exhaustion).
 
     Args:
         results: List of (allowed, limit, reset_timestamp, metadata) tuples.
@@ -1173,6 +1195,8 @@ class RateLimiterPlugin(Plugin):
             return PromptPrehookResult(metadata=meta)
 
         except Exception:
+            # Deliberate fail-open: engine errors must not block legitimate traffic.
+            # See module docstring "Security contract — fail-open on error".
             logger.exception("RateLimiterPlugin.prompt_pre_fetch encountered an unexpected error; allowing request")
             return PromptPrehookResult()
 
@@ -1262,5 +1286,7 @@ class RateLimiterPlugin(Plugin):
             return ToolPreInvokeResult(metadata=meta)
 
         except Exception:
+            # Deliberate fail-open: engine errors must not block legitimate traffic.
+            # See module docstring "Security contract — fail-open on error".
             logger.exception("RateLimiterPlugin.tool_pre_invoke encountered an unexpected error; allowing request")
             return ToolPreInvokeResult()
